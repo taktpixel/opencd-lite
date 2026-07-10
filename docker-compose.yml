@@ -1,0 +1,55 @@
+# Development environment for opencd-lite.
+#
+# Everyday usage (tests run inside the container):
+#   docker compose build dev
+#   docker compose run --rm dev                # run the test suite
+#   docker compose run --rm dev ruff check .   # any other command
+#
+# Training with MLflow tracking (optional, kept behind a profile so it
+# never starts unless requested):
+#   docker compose --profile train up -d mlflow      # UI at http://localhost:5000
+#   docker compose --profile train run --rm train \
+#     python tools/train.py configs/cgnet/cgnet_256x256_40k_levircd.py \
+#     --data-root /data/LEVIR-CD
+
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    volumes:
+      - .:/workspace
+      - torch-cache:/root/.cache/torch
+
+  train:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    profiles: ["train"]
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - .:/workspace
+      - torch-cache:/root/.cache/torch
+      # Mount your dataset here, e.g.:
+      # - /path/to/LEVIR-CD:/data/LEVIR-CD:ro
+    depends_on:
+      - mlflow
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    profiles: ["train"]
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --artifacts-destination /mlflow/artifacts
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow-data:/mlflow
+
+volumes:
+  torch-cache:
+  mlflow-data:

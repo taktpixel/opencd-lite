@@ -1,0 +1,69 @@
+"""Tests for the mmengine-compatible config loader."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from opencd_lite.config import ConfigDict, load_config
+
+
+def test_load_cgnet_config(configs_dir: Path) -> None:
+    cfg = load_config(configs_dir / "cgnet" / "cgnet_256x256_40k_levircd.py")
+
+    # Values from the _base_ model file survive the merge.
+    assert cfg.model.type == "DIEncoderDecoder"
+    assert cfg.model.backbone.type == "CGNet"
+    assert cfg.model.decode_head.threshold == 0.5
+
+    # The leaf config overrides test_cfg via recursive dict merge.
+    assert cfg.model.test_cfg.mode == "slide"
+    assert tuple(cfg.model.test_cfg.crop_size) == (256, 256)
+    assert tuple(cfg.model.test_cfg.stride) == (128, 128)
+
+    # _delete_=True replaces optim_wrapper wholesale and is stripped.
+    assert cfg.optim_wrapper.optimizer.lr == 5e-4
+    assert "_delete_" not in cfg.optim_wrapper
+
+    # Values from the chained common/_base_ configs are present.
+    assert cfg.train_dataloader.dataset.type == "LEVIR_CD_Dataset"
+    assert cfg.default_scope == "opencd"
+
+
+def test_load_ifn_config(configs_dir: Path) -> None:
+    cfg = load_config(configs_dir / "ifn" / "ifn_256x256_40k_levircd.py")
+
+    assert cfg.model.backbone.type == "IFN"
+    assert cfg.model.test_cfg.mode == "whole"
+    # IFN's binary head does not set a threshold in the config.
+    assert "threshold" not in cfg.model.decode_head
+    # Base optimizer settings are not overridden by the leaf config.
+    assert cfg.optim_wrapper.optimizer.lr == 0.001
+
+
+def test_load_upstream_config_in_place() -> None:
+    """The loader must read configs from the original Open-CD checkout."""
+    upstream = (
+        Path(__file__).resolve().parents[2]
+        / "open-cd"
+        / "configs"
+        / "ifn"
+        / "ifn_256x256_40k_levircd.py"
+    )
+    if not upstream.is_file():
+        pytest.skip("upstream open-cd checkout not available")
+    cfg = load_config(upstream)
+    assert cfg.model.backbone.type == "IFN"
+
+
+def test_config_dict_attribute_access() -> None:
+    cfg = ConfigDict({"a": {"b": 1}})
+    assert cfg["a"] == {"b": 1}
+    with pytest.raises(AttributeError):
+        _ = cfg.missing
+
+
+def test_missing_file_raises(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        load_config(tmp_path / "nope.py")

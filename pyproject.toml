@@ -1,0 +1,91 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "opencd-lite"
+# Versioning tracks upstream Open-CD (currently 1.1.0) with a minor bump,
+# signaling "Open-CD 1.1 model assets, new packaging".
+version = "1.2.0"
+description = "Lightweight, mmlab-free PyTorch implementation of Open-CD change detection models"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "opencd-lite contributors" }]
+requires-python = ">=3.11"
+keywords = ["change-detection", "remote-sensing", "pytorch", "onnx"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+dependencies = [
+    "torch>=2.2",
+    "torchvision>=0.17",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+train = [
+    "lightning>=2.2",
+    "mlflow>=2.10",
+    "pillow>=10.0",
+]
+export = [
+    "onnx>=1.15",
+    "onnxruntime>=1.17",
+]
+dev = [
+    "opencd-lite[train,export]",
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "ruff>=0.4",
+    "mypy>=1.9",
+]
+
+[project.urls]
+Homepage = "https://github.com/taktpixel/opencd-lite"
+Issues = "https://github.com/taktpixel/opencd-lite/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/opencd_lite"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+# configs/ are verbatim copies of upstream Open-CD configs and are kept
+# byte-identical on purpose; do not lint or reformat them.
+extend-exclude = ["configs"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+]
+# Model code intentionally mirrors upstream Open-CD module/attribute naming
+# for checkpoint compatibility, which occasionally trips naming rules.
+ignore = ["E741"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/opencd_lite"]
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "export: ONNX export tests (require the 'export' extra)",
+    "train: training smoke tests (require the 'train' extra)",
+]
