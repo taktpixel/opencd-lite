@@ -11,7 +11,7 @@
 - `pip install` だけで環境構築が完結（`mim` 不要、ソースビルド不要、バージョン固定の連鎖なし）
 - 任意の Python アプリケーションから直接 import・インスタンス化できる
 - **本家 Open-CD の config ファイルをそのまま読み込める**。**公開済みの学習済み重みを再学習なしで流用できる**
-- ONNX にエクスポートでき、アプリ側は `onnxruntime` だけで推論できる
+- ONNX にエクスポートでき、アプリ側は `onnxruntime` だけで推論できる。コアインストールは torch 非依存なので、デプロイ側は PyTorch を一切入れずに済む
 
 ## 対応モデル
 
@@ -28,14 +28,18 @@ checkpoint は Hugging Face 上の公式 [Open-CD Model Zoo](https://huggingface
 
 ## インストール
 
+**コアインストールは torch 非依存**で、エクスポート済みの ONNX グラフからの推論だけならこれで完結します。PyTorch モデル・学習・ONNX への*エクスポート*は `torch` を引き込む extra の裏側にあるため、onnxruntime だけで動かすデプロイ環境に torch が入ることはありません。
+
 ```bash
-pip install opencd-lite              # コア: torch, torchvision, numpy
-pip install "opencd-lite[export]"    # + onnx, onnxruntime
+pip install opencd-lite              # コア: numpy のみ
+pip install "opencd-lite[onnx]"      # torch 非依存の推論: + onnxruntime, pillow
+pip install "opencd-lite[torch]"     # PyTorch モデル: + torch, torchvision
+pip install "opencd-lite[export]"    # ONNX へのエクスポート: + torch, onnx, onnxruntime
 pip install "opencd-lite[train]"     # + lightning, mlflow, pillow
 pip install "opencd-lite[dataprep]"  # + opencv-python-headless, pillow
 ```
 
-Python 3.11 以上が必要です。
+Python 3.11 以上が必要です。以下の「直接インスタンス化」「build_model」の API には `torch`（または `train`/`export`）extra が必要です。ONNX 推論のセクションは `onnx` extra だけで動きます。
 
 ## クイックスタート
 
@@ -79,7 +83,37 @@ from opencd_lite import export_onnx
 export_onnx(detector, "cgnet.onnx", input_size=(256, 256))
 ```
 
-エクスポートしたモデルの実行に必要なのは `onnxruntime` と `numpy` のみです。入力は [`src/opencd_lite/transforms.py`](src/opencd_lite/transforms.py) に記載の仕様（RGB 順、0–255 スケール、ImageNet mean/std）で正規化してください。
+エクスポート時に、モデルのテスト時プロトコル（whole/slide、crop、stride、threshold）が ONNX のメタデータへ埋め込まれるため、グラフ単体で推論設定を復元できます。
+
+### torch 非依存の ONNX 推論
+
+`ONNXChangeDetector` は Open-CD のテスト時プロトコル全体（正規化、パディング、whole / スライディングウィンドウ推論、二値化）を、エクスポート済みグラフの上で `numpy` と `onnxruntime` のみを使って再現します。デプロイ時に PyTorch は不要です。プロトコルは PyTorch 版 `ChangeDetector` と演算単位で対応するよう実装されており、これまで検証したすべての入力（学習済み CGNet checkpoint での実データ 256×256 パッチ 30/30、および 2927×3197 の slide 推論）で出力マスクが完全一致しています。
+
+```python
+import numpy as np
+from PIL import Image
+from opencd_lite.onnx import ONNXChangeDetector
+
+# 推論プロトコルはエクスポート時に書き込まれた ONNX メタデータから読み込まれます。
+detector = ONNXChangeDetector.from_file("cgnet.onnx")
+
+before = np.asarray(Image.open("before.png").convert("RGB"))
+after = np.asarray(Image.open("after.png").convert("RGB"))
+mask = detector.predict(before, after)  # (H, W) uint8、1 = 変化あり
+```
+
+エクスポートされたグラフは固定サイズです。**slide モード**（これらの config の既定）は画像をエクスポートサイズのウィンドウに分割して処理するため、crop サイズ以上であれば任意の入力サイズを扱えます。**whole モード**はエクスポートサイズと完全に一致する入力（例: 256×256 に切り出し済みのパッチ）を想定します。サイズが一致しない場合は、誤った推論をせず明確なエラーを送出します。入力は [`src/opencd_lite/transforms.py`](src/opencd_lite/transforms.py) の仕様（RGB 順、0–255 スケール、ImageNet mean/std）で内部的に正規化されます。
+
+コマンドラインで、エクスポートから推論まで torch なしで実行:
+
+```bash
+pip install "opencd-lite[export]"    # グラフ書き出し（この時だけ torch が必要）
+python tools/export.py configs/cgnet/cgnet_256x256_40k_levircd.py \
+    --checkpoint cgnet_levircd.pth -o cgnet.onnx --input-size 256 256
+
+pip install "opencd-lite[onnx]"      # 実行（torch 不要）
+python tools/infer_onnx.py cgnet.onnx before.png after.png -o mask.png --scale
+```
 
 ### データセット準備
 

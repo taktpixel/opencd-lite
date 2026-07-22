@@ -68,9 +68,33 @@ def export_onnx(
     finally:
         model.train(was_training)
 
+    # Embed the test-time protocol so ONNXChangeDetector.from_file can
+    # reproduce padding / slide inference / binarization with no config.
+    inference_cfg = getattr(model, "inference_cfg", None)
+    if inference_cfg is not None:
+        _embed_inference_metadata(output_path, inference_cfg)
+
     if verify:
         verify_onnx(model, output_path, example, atol=atol)
     return output_path
+
+
+def _embed_inference_metadata(output_path: Path, inference_cfg: object) -> None:
+    """Write the model's :class:`InferenceConfig` into the ONNX metadata."""
+    import json
+
+    import onnx
+
+    from .onnx import ONNX_METADATA_KEY
+
+    to_dict = getattr(inference_cfg, "to_dict", None)
+    if to_dict is None:
+        return
+    proto = onnx.load(str(output_path))
+    entry = proto.metadata_props.add()
+    entry.key = ONNX_METADATA_KEY
+    entry.value = json.dumps(to_dict())
+    onnx.save(proto, str(output_path))
 
 
 def _export(

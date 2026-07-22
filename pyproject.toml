@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "opencd-lite"
 # Versioning tracks upstream Open-CD (currently 1.1.0) with a minor bump,
 # signaling "Open-CD 1.1 model assets, new packaging".
-version = "1.2.0"
+version = "1.3.0"
 description = "Lightweight, mmlab-free PyTorch implementation of Open-CD change detection models"
 readme = "README.md"
 license = "Apache-2.0"
@@ -22,28 +22,42 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Image Processing",
 ]
+# Core install is torch-free: only the ONNX inference path
+# (opencd-lite[onnx]) works out of the box. The PyTorch models, training
+# and ONNX *export* live behind extras that pull torch in — so a
+# deployment that only runs onnxruntime never installs torch.
 dependencies = [
-    "torch>=2.2",
-    "torchvision>=0.17",
     "numpy>=1.24",
 ]
 
 [project.optional-dependencies]
+# PyTorch runtime: needed to instantiate/run the nn.Module models.
+torch = [
+    "torch>=2.2",
+    "torchvision>=0.17",
+]
+# Torch-free ONNX inference (ONNXChangeDetector + the infer CLI).
+onnx = [
+    "onnxruntime>=1.17",
+    "pillow>=10.0",
+]
+# Writing ONNX graphs traces the PyTorch model, so export needs both.
+export = [
+    "opencd-lite[torch,onnx]",
+    "onnx>=1.15",
+]
 train = [
+    "opencd-lite[torch]",
     "lightning>=2.2",
     "mlflow>=2.10",
     "pillow>=10.0",
-]
-export = [
-    "onnx>=1.15",
-    "onnxruntime>=1.17",
 ]
 dataprep = [
     "opencv-python-headless>=4.9",
     "pillow>=10.0",
 ]
 dev = [
-    "opencd-lite[train,export,dataprep]",
+    "opencd-lite[torch,onnx,export,train,dataprep]",
     "pytest>=8.0",
     "pytest-cov>=4.1",
     "ruff>=0.4",
@@ -91,6 +105,7 @@ testpaths = ["tests"]
 addopts = "-ra"
 markers = [
     "export: ONNX export tests (require the 'export' extra)",
+    "onnx: torch-free ONNX inference tests (require the 'onnx' extra)",
     "train: training smoke tests (require the 'train' extra)",
     "dataprep: dataset preparation tests (require the 'dataprep' extra)",
 ]

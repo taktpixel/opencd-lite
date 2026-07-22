@@ -11,7 +11,7 @@ Lightweight, mmlab-free PyTorch implementation of [Open-CD](https://github.com/l
 - `pip install` is all you need — no `mim`, no source builds, no version-pin chains
 - models can be imported and instantiated directly from any Python application
 - **upstream Open-CD config files load unchanged**, and **published Open-CD checkpoints load without re-training**
-- models export to ONNX so applications can run inference with `onnxruntime` alone
+- models export to ONNX and run inference with `onnxruntime` alone — the core install is torch-free, so a deployment can skip PyTorch entirely
 
 ## Supported models
 
@@ -28,14 +28,23 @@ Checkpoints come from the official [Open-CD Model Zoo](https://huggingface.co/li
 
 ## Installation
 
+The **core install is torch-free** — enough to run inference from an
+exported ONNX graph. The PyTorch models, training and ONNX *export* live
+behind extras that pull `torch` in, so a deployment that only runs
+onnxruntime never installs torch.
+
 ```bash
-pip install opencd-lite              # core: torch, torchvision, numpy
-pip install "opencd-lite[export]"    # + onnx, onnxruntime
+pip install opencd-lite              # core: numpy only
+pip install "opencd-lite[onnx]"      # torch-free inference: + onnxruntime, pillow
+pip install "opencd-lite[torch]"     # PyTorch models: + torch, torchvision
+pip install "opencd-lite[export]"    # export models to ONNX: + torch, onnx, onnxruntime
 pip install "opencd-lite[train]"     # + lightning, mlflow, pillow
 pip install "opencd-lite[dataprep]"  # + opencv-python-headless, pillow
 ```
 
-Requires Python 3.11+.
+Requires Python 3.11+. The direct-instantiation and `build_model` APIs
+below need the `torch` (or `train`/`export`) extra; the ONNX inference
+section needs only `onnx`.
 
 ## Quick start
 
@@ -79,7 +88,52 @@ from opencd_lite import export_onnx
 export_onnx(detector, "cgnet.onnx", input_size=(256, 256))
 ```
 
-The exported model needs only `onnxruntime` and `numpy` at deployment time. Inputs must be normalized as described in [`src/opencd_lite/transforms.py`](src/opencd_lite/transforms.py): RGB order, 0–255 scale, ImageNet mean/std.
+The export embeds the model's test-time protocol (whole/slide, crop,
+stride, threshold) into the ONNX metadata, so the graph is
+self-describing.
+
+### Torch-free ONNX inference
+
+`ONNXChangeDetector` reproduces the full Open-CD test-time protocol —
+normalization, padding, whole/sliding-window inference and
+binarization — on the exported graph, using only `numpy` and
+`onnxruntime`. No PyTorch is needed at deployment time. The protocol is
+implemented op-for-op against the PyTorch `ChangeDetector`, and its masks
+match it exactly on every input tested (30/30 real 256×256 patches and a
+2927×3197 slide pair on a trained CGNet checkpoint).
+
+```python
+import numpy as np
+from PIL import Image
+from opencd_lite.onnx import ONNXChangeDetector
+
+# The inference protocol is read from the ONNX metadata written at export.
+detector = ONNXChangeDetector.from_file("cgnet.onnx")
+
+before = np.asarray(Image.open("before.png").convert("RGB"))
+after = np.asarray(Image.open("after.png").convert("RGB"))
+mask = detector.predict(before, after)  # (H, W) uint8, 1 = changed
+```
+
+The exported graph is fixed-size. **Slide mode** (the default for these
+configs) tiles the image into windows of the exported size, so it handles
+inputs of any size at or above the crop size. **Whole mode** expects
+inputs of exactly the exported size (e.g. pre-tiled 256×256 patches). A
+mismatched size raises a clear error rather than running incorrectly.
+Inputs are normalized internally per
+[`src/opencd_lite/transforms.py`](src/opencd_lite/transforms.py): RGB
+order, 0–255 scale, ImageNet mean/std.
+
+Command-line, torch-free end to end:
+
+```bash
+pip install "opencd-lite[export]"    # to write the graph (needs torch once)
+python tools/export.py configs/cgnet/cgnet_256x256_40k_levircd.py \
+    --checkpoint cgnet_levircd.pth -o cgnet.onnx --input-size 256 256
+
+pip install "opencd-lite[onnx]"      # to run it (no torch)
+python tools/infer_onnx.py cgnet.onnx before.png after.png -o mask.png --scale
+```
 
 ### Dataset preparation
 

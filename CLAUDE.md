@@ -49,17 +49,27 @@ src/opencd_lite/
   config.py     mmengine-style .py config loader (no mmengine)
   builder.py    Open-CD config -> ChangeDetector
   checkpoint.py Open-CD checkpoint loading (backbone.* prefix strip)
-  transforms.py preprocessing specification (fixed constants)
+  transforms.py preprocessing specification (fixed constants); torch-free
+                constants + numpy helpers, torch imported lazily
+  protocol.py   InferenceConfig (test-time protocol dataclass, torch-free)
   inference.py  ChangeDetector: whole/slide inference, binarization
-  export.py     ONNX export + onnxruntime verification
+  export.py     ONNX export (+ verification, embeds InferenceConfig metadata)
+  onnx.py       ONNXChangeDetector: torch-free inference (numpy + onnxruntime)
   datasets/     LEVIR-CD-layout folder dataset (train extra)
   tasks/        Lightning training task (train extra)
   data_prep/    dataset preparation utilities (dataprep extra: alignment, cropping, splitting)
 configs/        Open-CD configs, copied unchanged from upstream
 tools/train.py  training entry point (optional MLflow tracking)
+tools/export.py ONNX export CLI
+tools/infer_onnx.py  torch-free ONNX inference CLI
 tools/prepare_data.py  dataset preparation CLI
-tests/          pytest suite (markers: export, train, dataprep)
+tests/          pytest suite (markers: export, onnx, train, dataprep)
 ```
+
+The core install is torch-free (`numpy` only); `torch`/`torchvision` are
+the `[torch]` extra. `import opencd_lite` is lazy (PEP 562) so the ONNX
+inference path (`opencd_lite.onnx`, `opencd_lite.protocol`, the torch-free
+parts of `transforms.py`) works without PyTorch installed.
 
 When porting a new model, follow the checklist in
 [CONTRIBUTING.md](CONTRIBUTING.md#porting-a-new-model-from-open-cd).
