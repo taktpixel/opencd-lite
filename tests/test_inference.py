@@ -52,6 +52,45 @@ def test_slide_inference(cgnet_small) -> None:
     assert mask.shape == (96, 96)
 
 
+def test_slide_inference_keeps_shape_for_non_divisible_sizes(cgnet_small) -> None:
+    detector = ChangeDetector(
+        cgnet_small,
+        inference=InferenceConfig(mode="slide", crop_size=(64, 64), stride=(32, 32)),
+    )
+    mask = detector.predict(_random_image(100, 90), _random_image(100, 90))
+    assert mask.shape == (100, 90)
+
+
+def test_slide_inference_matches_pre_padded_input(cgnet_small) -> None:
+    """Upstream pads the whole image before sliding; sliding must match that.
+
+    Laying the window grid out on the unpadded image moves the
+    bottom/right windows, which changes the prediction along those edges.
+    """
+    detector = ChangeDetector(
+        cgnet_small,
+        inference=InferenceConfig(mode="slide", crop_size=(64, 64), stride=(32, 32)),
+    )
+    x1 = normalize_image(_random_image(100, 90))[None]
+    x2 = normalize_image(_random_image(100, 90))[None]
+    padded1, (height, width) = pad_to_divisor(x1, IMAGENET_SPEC.size_divisor)
+    padded2, _ = pad_to_divisor(x2, IMAGENET_SPEC.size_divisor)
+
+    logits = detector.predict_logits(x1, x2)
+    expected = detector.predict_logits(padded1, padded2)[..., :height, :width]
+    assert logits.shape == expected.shape
+    torch.testing.assert_close(logits, expected)
+
+
+def test_slide_inference_with_one_dimension_below_crop(cgnet_small) -> None:
+    detector = ChangeDetector(
+        cgnet_small,
+        inference=InferenceConfig(mode="slide", crop_size=(64, 64), stride=(32, 32)),
+    )
+    mask = detector.predict(_random_image(40, 100), _random_image(40, 100))
+    assert mask.shape == (40, 100)
+
+
 def test_slide_falls_back_to_whole_for_small_images(cgnet_small) -> None:
     detector = ChangeDetector(
         cgnet_small,

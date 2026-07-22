@@ -23,11 +23,11 @@ from .inference import ChangeDetector, InferenceConfig
 from .models import ConvSegHead, get_model_class
 from .transforms import IMAGENET_SPEC, PreprocessSpec
 
-__all__ = ["build_model"]
+__all__ = ["IDENTITY_HEAD_TYPES", "build_model"]
 
 _SUPPORTED_DETECTOR_TYPES = ("DIEncoderDecoder",)
 #: Parameter-free Open-CD heads: the model output already is the prediction.
-_IDENTITY_HEAD_TYPES = ("IdentityHead", "DSIdentityHead")
+IDENTITY_HEAD_TYPES = ("IdentityHead", "DSIdentityHead")
 #: mmseg's BaseDecodeHead default when a binary head leaves threshold unset.
 _DEFAULT_BINARY_THRESHOLD = 0.3
 #: mmseg's BaseDecodeHead default dropout before the classifier.
@@ -94,7 +94,7 @@ def build_model(
 def _build_decode_head(head_cfg: Mapping[str, Any]) -> nn.Module | None:
     """Build the parametric decode head, or ``None`` for identity heads."""
     head_type = head_cfg.get("type", "IdentityHead")
-    if head_type in _IDENTITY_HEAD_TYPES:
+    if head_type in IDENTITY_HEAD_TYPES:
         return None
     if head_type == "mmseg.FCNHead":
         # Only the degenerate FCNHead used by Open-CD configs (a pure

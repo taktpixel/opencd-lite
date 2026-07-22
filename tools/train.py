@@ -27,7 +27,7 @@ from torch.utils.data import DataLoader
 
 from opencd_lite import build_model, load_config
 from opencd_lite.datasets import BiTemporalFolderDataset
-from opencd_lite.tasks import ChangeDetectionTask
+from opencd_lite.tasks import ChangeDetectionTask, head_loss_specs_from_config
 
 
 def parse_args() -> argparse.Namespace:
@@ -111,11 +111,12 @@ def main() -> None:
 
     optimizer_cfg = cfg.get("optim_wrapper", {}).get("optimizer", {})
     task = ChangeDetectionTask(
-        detector.backbone,
+        # The whole detector, so a parametric decode head (SNUNet, the
+        # FC-Siam family) is trained rather than left at its init.
+        detector,
+        head_losses=head_loss_specs_from_config(cfg["model"]),
         lr=optimizer_cfg.get("lr", 1e-3),
         weight_decay=optimizer_cfg.get("weight_decay", 0.05),
-        threshold=detector.inference_cfg.threshold,
-        out_index=detector.inference_cfg.out_index,
     )
 
     data_root = args.data_root or Path(cfg["train_dataloader"]["dataset"]["data_root"])

@@ -118,11 +118,20 @@ class ChangeDetector(nn.Module):
         assert cfg.crop_size is not None and cfg.stride is not None
         h_crop, w_crop = cfg.crop_size
         h_stride, w_stride = cfg.stride
+
+        # Upstream pads the *whole* image to the size divisor before
+        # sliding (mmseg does it in the data preprocessor at test time),
+        # so the window grid must be laid out on the padded extent —
+        # otherwise the bottom/right windows sit at different origins and
+        # the predictions differ along those edges.
+        divisor = self.preprocess.size_divisor
+        x1, (height, width) = pad_to_divisor(x1, divisor)
+        x2, _ = pad_to_divisor(x2, divisor)
         batch, _, h_img, w_img = x1.shape
 
         # Images smaller than the window fall back to whole inference.
         if h_img <= h_crop and w_img <= w_crop:
-            return self._whole_inference(x1, x2)
+            return self.forward(x1, x2)[..., :height, :width]
 
         h_grids = max(h_img - h_crop + h_stride - 1, 0) // h_stride + 1
         w_grids = max(w_img - w_crop + w_stride - 1, 0) // w_stride + 1
@@ -143,7 +152,7 @@ class ChangeDetector(nn.Module):
                 preds[:, :, y1:y2, x1_pos:x2_pos] += crop_logits
                 count[:, :, y1:y2, x1_pos:x2_pos] += 1
         assert torch.all(count > 0), "Sliding window failed to cover the image"
-        return preds / count
+        return (preds / count)[..., :height, :width]
 
     @torch.inference_mode()
     def predict(
