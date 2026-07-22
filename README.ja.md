@@ -29,9 +29,10 @@ checkpoint は Hugging Face 上の公式 [Open-CD Model Zoo](https://huggingface
 ## インストール
 
 ```bash
-pip install opencd-lite            # コア: torch, torchvision, numpy
-pip install "opencd-lite[export]"  # + onnx, onnxruntime
-pip install "opencd-lite[train]"   # + lightning, mlflow, pillow
+pip install opencd-lite              # コア: torch, torchvision, numpy
+pip install "opencd-lite[export]"    # + onnx, onnxruntime
+pip install "opencd-lite[train]"     # + lightning, mlflow, pillow
+pip install "opencd-lite[dataprep]"  # + opencv-python-headless, pillow
 ```
 
 Python 3.11 以上が必要です。
@@ -79,6 +80,49 @@ export_onnx(detector, "cgnet.onnx", input_size=(256, 256))
 ```
 
 エクスポートしたモデルの実行に必要なのは `onnxruntime` と `numpy` のみです。入力は [`src/opencd_lite/transforms.py`](src/opencd_lite/transforms.py) に記載の仕様（RGB 順、0–255 スケール、ImageNet mean/std）で正規化してください。
+
+### データセット準備
+
+変化前 / 変化後の生画像フォルダから、`tools/train.py` がそのまま利用できる
+LEVIR-CD フォルダ構成のデータセットを作成します。`dataprep` extra を入れると、
+6 つのサブコマンドを持つ `tools/prepare_data.py` CLI が使えます:
+
+```bash
+pip install "opencd-lite[dataprep]"
+
+# 変化後画像を変化前画像に位置合わせ（キーポイントマッチング）
+python tools/prepare_data.py align before/ after/ -o aligned/ --method sift
+
+# ランダムクロップ + バランス調整した train/val/test 分割（LEVIR 構成）
+python tools/prepare_data.py crop \
+    --image-from before/ --image-to aligned/ --label label/ \
+    -o dataset/ --crop-size 256 --count 30 --split 0.6 0.2 0.2
+
+# 並列ディレクトリをシャッフルして train/val に分割
+python tools/prepare_data.py split A/ B/ label/ -o dataset/ --ratio 0.8
+
+# 全ディレクトリに共通するファイル名だけを残す
+python tools/prepare_data.py intersect A/ B/ label/ -o common/
+
+# 画像を PNG に変換（入力のサブツリー構造を維持）
+python tools/prepare_data.py convert raw/ -o png/ --pattern '*.bmp' --to png
+
+# スライディングウィンドウによるタイリング
+python tools/prepare_data.py tile images/ -o tiles/ \
+    --tile-size 1024 1024 --stride 512 512
+```
+
+`B` を `A` に位置合わせしてから、学習可能なデータセットへクロップするまでの一連の例:
+
+```bash
+python tools/prepare_data.py align A/ B/ -o aligned/
+python tools/prepare_data.py crop \
+    --image-from A/ --image-to aligned/ --label label/ \
+    -o dataset/ --split 0.6 0.2 0.2
+# dataset/train/{A,B,label}、dataset/val/...、dataset/test/... が tools/train.py 用に生成される
+```
+
+各オプションの詳細は `python tools/prepare_data.py <command> --help` を参照してください。
 
 ### 学習（MLflow 記録はオプション）
 

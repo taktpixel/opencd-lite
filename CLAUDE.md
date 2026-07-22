@@ -54,9 +54,11 @@ src/opencd_lite/
   export.py     ONNX export + onnxruntime verification
   datasets/     LEVIR-CD-layout folder dataset (train extra)
   tasks/        Lightning training task (train extra)
+  data_prep/    dataset preparation utilities (dataprep extra: alignment, cropping, splitting)
 configs/        Open-CD configs, copied unchanged from upstream
 tools/train.py  training entry point (optional MLflow tracking)
-tests/          pytest suite (markers: export, train)
+tools/prepare_data.py  dataset preparation CLI
+tests/          pytest suite (markers: export, train, dataprep)
 ```
 
 When porting a new model, follow the checklist in

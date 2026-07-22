@@ -38,8 +38,12 @@ export = [
     "onnx>=1.15",
     "onnxruntime>=1.17",
 ]
+dataprep = [
+    "opencv-python-headless>=4.9",
+    "pillow>=10.0",
+]
 dev = [
-    "opencd-lite[train,export]",
+    "opencd-lite[train,export,dataprep]",
     "pytest>=8.0",
     "pytest-cov>=4.1",
     "ruff>=0.4",
@@ -88,4 +92,5 @@ addopts = "-ra"
 markers = [
     "export: ONNX export tests (require the 'export' extra)",
     "train: training smoke tests (require the 'train' extra)",
+    "dataprep: dataset preparation tests (require the 'dataprep' extra)",
 ]

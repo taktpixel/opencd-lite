@@ -29,9 +29,10 @@ Checkpoints come from the official [Open-CD Model Zoo](https://huggingface.co/li
 ## Installation
 
 ```bash
-pip install opencd-lite            # core: torch, torchvision, numpy
-pip install "opencd-lite[export]"  # + onnx, onnxruntime
-pip install "opencd-lite[train]"   # + lightning, mlflow, pillow
+pip install opencd-lite              # core: torch, torchvision, numpy
+pip install "opencd-lite[export]"    # + onnx, onnxruntime
+pip install "opencd-lite[train]"     # + lightning, mlflow, pillow
+pip install "opencd-lite[dataprep]"  # + opencv-python-headless, pillow
 ```
 
 Requires Python 3.11+.
@@ -79,6 +80,49 @@ export_onnx(detector, "cgnet.onnx", input_size=(256, 256))
 ```
 
 The exported model needs only `onnxruntime` and `numpy` at deployment time. Inputs must be normalized as described in [`src/opencd_lite/transforms.py`](src/opencd_lite/transforms.py): RGB order, 0–255 scale, ImageNet mean/std.
+
+### Dataset preparation
+
+Turn raw before/after image folders into a LEVIR-CD-layout dataset that
+`tools/train.py` can consume. The `dataprep` extra adds a `tools/prepare_data.py`
+CLI with six subcommands:
+
+```bash
+pip install "opencd-lite[dataprep]"
+
+# Align after-images onto before-images (keypoint matching)
+python tools/prepare_data.py align before/ after/ -o aligned/ --method sift
+
+# Random crops + balanced train/val/test split in the LEVIR layout
+python tools/prepare_data.py crop \
+    --image-from before/ --image-to aligned/ --label label/ \
+    -o dataset/ --crop-size 256 --count 30 --split 0.6 0.2 0.2
+
+# Shuffle & split parallel directories into train/val
+python tools/prepare_data.py split A/ B/ label/ -o dataset/ --ratio 0.8
+
+# Keep only filenames common to all directories
+python tools/prepare_data.py intersect A/ B/ label/ -o common/
+
+# Convert images to PNG (mirrors the input subtree)
+python tools/prepare_data.py convert raw/ -o png/ --pattern '*.bmp' --to png
+
+# Sliding-window tiling
+python tools/prepare_data.py tile images/ -o tiles/ \
+    --tile-size 1024 1024 --stride 512 512
+```
+
+End to end, aligning `B` onto `A` and cropping into a training-ready dataset:
+
+```bash
+python tools/prepare_data.py align A/ B/ -o aligned/
+python tools/prepare_data.py crop \
+    --image-from A/ --image-to aligned/ --label label/ \
+    -o dataset/ --split 0.6 0.2 0.2
+# dataset/train/{A,B,label}, dataset/val/..., dataset/test/... ready for tools/train.py
+```
+
+See `python tools/prepare_data.py <command> --help` for the full option list.
 
 ### Training (with optional MLflow tracking)
 
