@@ -56,6 +56,19 @@ def test_load_bit_config(configs_dir: Path) -> None:
     assert cfg.model.test_cfg.mode == "whole"
 
 
+def test_load_changer_config(configs_dir: Path) -> None:
+    cfg = load_config(configs_dir / "changer" / "changer_ex_r18_512x512_40k_levircd.py")
+
+    assert cfg.model.type == "DIEncoderDecoder"
+    assert cfg.model.backbone.type == "IA_ResNetV1c"
+    # The leaf config overrides the all-identity interaction_cfg.
+    assert cfg.model.backbone.interaction_cfg[1]["type"] == "SpatialExchange"
+    assert cfg.model.backbone.interaction_cfg[2]["type"] == "ChannelExchange"
+    assert cfg.model.decode_head.type == "Changer"
+    assert list(cfg.model.decode_head.in_index) == [0, 1, 2, 3]
+    assert cfg.model.decode_head.channels == 128
+
+
 def test_load_upstream_config_in_place() -> None:
     """The loader must read configs from the original Open-CD checkout."""
     upstream = (

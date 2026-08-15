@@ -134,6 +134,61 @@ def test_feature_fusion_neck_policies() -> None:
     assert total.eq(6.0).all()
 
 
+def test_interaction_layers() -> None:
+    from opencd_lite.models import ChannelExchange, SpatialExchange, TwoIdentity
+
+    x1 = torch.arange(2 * 4 * 2 * 4, dtype=torch.float32).reshape(2, 4, 2, 4)
+    x2 = -x1
+
+    y1, y2 = TwoIdentity()(x1, x2)
+    assert torch.equal(y1, x1) and torch.equal(y2, x2)
+
+    # Channels at even indices are exchanged (p=1/2 -> period 2).
+    y1, y2 = ChannelExchange(p=1 / 2)(x1, x2)
+    assert torch.equal(y1[:, 0], x2[:, 0]) and torch.equal(y1[:, 1], x1[:, 1])
+    assert torch.equal(y2[:, 0], x1[:, 0]) and torch.equal(y2[:, 1], x2[:, 1])
+
+    # Columns at even indices are exchanged.
+    y1, y2 = SpatialExchange(p=1 / 2)(x1, x2)
+    assert torch.equal(y1[..., 0], x2[..., 0]) and torch.equal(y1[..., 1], x1[..., 1])
+    assert torch.equal(y2[..., 0], x1[..., 0]) and torch.equal(y2[..., 1], x2[..., 1])
+
+
+def test_ia_resnet_forward_shapes() -> None:
+    from opencd_lite.models import IA_ResNetV1c
+
+    model = IA_ResNetV1c(
+        depth=18,
+        interaction_cfg=(
+            None,
+            {"type": "SpatialExchange", "p": 1 / 2},
+            {"type": "ChannelExchange", "p": 1 / 2},
+            {"type": "ChannelExchange", "p": 1 / 2},
+        ),
+    ).eval()
+    with torch.inference_mode():
+        outs = model(torch.randn(2, 3, 64, 64), torch.randn(2, 3, 64, 64))
+    # Each stage output concatenates the two temporal feature maps.
+    assert [tuple(o.shape) for o in outs] == [
+        (2, 128, 16, 16),
+        (2, 256, 8, 8),
+        (2, 512, 4, 4),
+        (2, 1024, 2, 2),
+    ]
+
+
+def test_changer_head_forward_shapes() -> None:
+    from opencd_lite.models import Changer
+
+    head = Changer(in_channels=(8, 16), channels=8, num_classes=2).eval()
+    # Two stages of concatenated bi-temporal features at 1/4 and 1/8 scale.
+    inputs = [torch.randn(2, 16, 16, 16), torch.randn(2, 32, 8, 8)]
+    with torch.inference_mode():
+        out = head(inputs)
+    # The head classifies at the resolution of the first stage.
+    assert out.shape == (2, 2, 16, 16)
+
+
 def test_bit_head_forward_shapes() -> None:
     from opencd_lite.models import BITHead
 
@@ -191,11 +246,14 @@ def test_registry_contains_supported_models() -> None:
         "FC_EF",
         "FC_Siam_conc",
         "FC_Siam_diff",
+        "IA_ResNet",
+        "IA_ResNetV1c",
+        "IA_ResNetV1d",
         "IFN",
         "SNUNet_ECAM",
         "mmseg.ResNet",
         "mmseg.ResNetV1c",
     ]
     assert get_model_class("CGNet").__name__ == "CGNet"
-    assert available_heads() == ["BITHead"]
+    assert available_heads() == ["BITHead", "Changer"]
     assert get_head_class("BITHead").__name__ == "BITHead"

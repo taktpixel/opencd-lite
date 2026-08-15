@@ -25,7 +25,9 @@ class InferenceConfig:
         crop_size: Window size ``(h, w)`` for slide mode.
         stride: Window stride ``(h, w)`` for slide mode.
         out_index: Which element of the model's output tuple is the
-            prediction (Open-CD ``decode_head.in_index``).
+            prediction (Open-CD ``decode_head.in_index``). A tuple of
+            indices selects multiple outputs to feed a multi-input
+            decode head.
         out_channels: Number of prediction channels; 1 means binary
             sigmoid output.
         threshold: Binarization threshold applied to the sigmoid output
@@ -36,7 +38,7 @@ class InferenceConfig:
     mode: str = "whole"
     crop_size: tuple[int, int] | None = None
     stride: tuple[int, int] | None = None
-    out_index: int = -1
+    out_index: int | tuple[int, ...] = -1
     out_channels: int = 1
     threshold: float = 0.3
 
@@ -55,11 +57,12 @@ class InferenceConfig:
         """Rebuild from :meth:`to_dict`, restoring the tuple fields."""
         crop_size = data.get("crop_size")
         stride = data.get("stride")
+        out_index = data.get("out_index", -1)
         return cls(
             mode=data.get("mode", "whole"),
             crop_size=tuple(crop_size) if crop_size is not None else None,
             stride=tuple(stride) if stride is not None else None,
-            out_index=data.get("out_index", -1),
+            out_index=tuple(out_index) if isinstance(out_index, (list, tuple)) else out_index,
             out_channels=data.get("out_channels", 1),
             threshold=data.get("threshold", 0.3),
         )

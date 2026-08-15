@@ -24,6 +24,7 @@ Lightweight, mmlab-free PyTorch implementation of [Open-CD](https://github.com/l
 | FC-Siam-conc | [Fully convolutional siamese networks (ICIP 2018)](https://ieeexplore.ieee.org/document/8451652) | `FC_Siam_conc` | [fc_siam_conc_256x256_40k_levircd.pth](https://huggingface.co/likyoo/Open-CD_Model_Zoo/resolve/main/LEVIR-CD/fc_siam_conc_256x256_40k_levircd.pth) |
 | SNUNet (ECAM) | [SNUNet-CD (GRSL 2021)](https://ieeexplore.ieee.org/document/9355573) | `SNUNet_ECAM` | [snunet_c16_256x256_40k_levircd.pth](https://huggingface.co/likyoo/Open-CD_Model_Zoo/resolve/main/LEVIR-CD/snunet_c16_256x256_40k_levircd.pth) |
 | BIT | [Remote Sensing Image Change Detection with Transformers (TGRS 2022)](https://ieeexplore.ieee.org/document/9491802) | `mmseg.ResNetV1c` + `BITHead` | [bit_r18_256x256_40k_levircd.pth](https://huggingface.co/likyoo/Open-CD_Model_Zoo/resolve/main/LEVIR-CD/bit_r18_256x256_40k_levircd.pth) |
+| Changer (ChangerEx) | [Changer: Feature Interaction Is What You Need (TGRS 2023)](https://ieeexplore.ieee.org/document/10123098) | `IA_ResNetV1c` + `Changer` | [ChangerEx_r18-512x512_40k_levircd.pth](https://huggingface.co/likyoo/Open-CD_Model_Zoo/resolve/main/LEVIR-CD/ChangerEx_r18-512x512_40k_levircd.pth) |
 
 Checkpoints come from the official [Open-CD Model Zoo](https://huggingface.co/likyoo/Open-CD_Model_Zoo) on Hugging Face and load as-is (see `load_opencd_checkpoint`). More models will be ported incrementally.
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch import Tensor, nn
 
 from .protocol import InferenceConfig
@@ -76,9 +77,25 @@ class ChangeDetector(nn.Module):
             outputs = self.neck(self.backbone(x1), self.backbone(x2))
         else:
             outputs = self.backbone(x1, x2)
-        logits = outputs[self.inference_cfg.out_index]
-        if self.decode_head is not None:
-            logits = self.decode_head(logits)
+        out_index = self.inference_cfg.out_index
+        if isinstance(out_index, tuple):
+            # Multi-input decode head (e.g. Changer): feed the selected
+            # feature maps as a list.
+            assert self.decode_head is not None, "multi-input out_index requires a decode head"
+            logits = self.decode_head([outputs[i] for i in out_index])
+        else:
+            logits = outputs[out_index]
+            if self.decode_head is not None:
+                logits = self.decode_head(logits)
+        if logits.shape[-2:] != x1.shape[-2:]:
+            # mmseg resizes head outputs to the input resolution at test
+            # time; heads already emitting full resolution are untouched.
+            logits = F.interpolate(
+                logits,
+                size=x1.shape[-2:],
+                mode="bilinear",
+                align_corners=getattr(self.decode_head, "align_corners", False),
+            )
         return logits
 
     @torch.inference_mode()

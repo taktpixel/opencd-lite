@@ -172,7 +172,11 @@ def _build_inference_config(model_cfg: Mapping[str, Any]) -> InferenceConfig:
 
     out_index = head_cfg.get("in_index", -1)
     if isinstance(out_index, (list, tuple)):
-        raise NotImplementedError("Multi-input decode heads are not supported yet")
+        # Multi-input decode heads (e.g. Changer) receive the selected
+        # outputs as a list; a parametric head must consume them.
+        if head_cfg.get("type", "IdentityHead") in IDENTITY_HEAD_TYPES:
+            raise NotImplementedError("Multi-input identity heads are not supported")
+        out_index = tuple(out_index)
 
     test_cfg: Mapping[str, Any] = model_cfg.get("test_cfg") or {}
     mode = test_cfg.get("mode", "whole")
