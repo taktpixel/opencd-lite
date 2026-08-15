@@ -137,6 +137,21 @@ def test_load_tinycd_v2_config(configs_dir: Path) -> None:
     assert cfg.model.decode_head.priori_attn is True
 
 
+def test_load_ban_config(configs_dir: Path) -> None:
+    cfg = load_config(configs_dir / "ban" / "ban_vit-l14-clip_mit-b0_512x512_40k_levircd.py")
+
+    assert cfg.model.type == "BAN"
+    assert cfg.model.image_encoder.type == "mmseg.VisionTransformer"
+    # The L14 leaf overrides the base ViT-B/16 tower.
+    assert cfg.model.image_encoder.embed_dims == 1024
+    assert cfg.model.image_encoder.patch_size == 14
+    assert tuple(cfg.model.encoder_resolution.size) == (336, 336)
+    assert cfg.model.decode_head.type == "BitemporalAdapterHead"
+    assert cfg.model.decode_head.ban_cfg.clip_channels == 1024
+    assert cfg.model.decode_head.ban_dec_cfg.type == "BAN_MLPDecoder"
+    assert cfg.model.test_cfg.mode == "slide"
+
+
 def test_load_upstream_config_in_place() -> None:
     """The loader must read configs from the original Open-CD checkout."""
     upstream = (

@@ -16,7 +16,7 @@ from torch import Tensor, nn
 from .protocol import InferenceConfig
 from .transforms import IMAGENET_SPEC, PreprocessSpec, normalize_image, pad_to_divisor
 
-__all__ = ["ChangeDetector", "InferenceConfig"]
+__all__ = ["BANChangeDetector", "ChangeDetector", "InferenceConfig"]
 
 
 class ChangeDetector(nn.Module):
@@ -201,3 +201,69 @@ class ChangeDetector(nn.Module):
             return mask.to(torch.uint8).cpu().numpy()
         finally:
             self.train(was_training)
+
+
+class BANChangeDetector(ChangeDetector):
+    """Change detector for Open-CD's ``BAN`` layout.
+
+    BAN pairs a frozen CLIP image tower (``image_encoder``) with a
+    trainable bi-temporal adapter head that also consumes the raw
+    images. With ``asymetric_input`` (upstream spelling) the encoder
+    sees a resized copy of each image while the head works at full
+    resolution. Attribute names mirror the Open-CD checkpoint key
+    layout (``image_encoder.*``, ``decode_head.*``).
+
+    Args:
+        image_encoder: The (frozen) vision tower; ``forward`` takes one
+            image batch and returns multi-level features.
+        decode_head: The BAN head; ``forward`` takes
+            ``[img_from, img_to, feats_from, feats_to]``.
+        preprocess: Normalization/padding specification.
+        inference: Test-time protocol.
+        asymetric_input: Resize encoder inputs to ``encoder_resolution``.
+        encoder_resolution: ``F.interpolate`` keyword arguments (``size``,
+            ``mode``) for the encoder input.
+    """
+
+    def __init__(
+        self,
+        image_encoder: nn.Module,
+        decode_head: nn.Module,
+        preprocess: PreprocessSpec = IMAGENET_SPEC,
+        inference: InferenceConfig | None = None,
+        asymetric_input: bool = True,
+        encoder_resolution: dict | None = None,
+    ) -> None:
+        nn.Module.__init__(self)
+        if asymetric_input and encoder_resolution is None:
+            raise ValueError("asymetric_input requires encoder_resolution")
+        self.image_encoder = image_encoder
+        self.decode_head = decode_head
+        self.preprocess = preprocess
+        self.inference_cfg = inference if inference is not None else InferenceConfig()
+        self.asymetric_input = asymetric_input
+        if encoder_resolution is not None:
+            encoder_resolution = dict(encoder_resolution)
+            if "size" in encoder_resolution:
+                encoder_resolution["size"] = tuple(encoder_resolution["size"])
+        self.encoder_resolution = encoder_resolution
+
+    def forward(self, x1: Tensor, x2: Tensor) -> Tensor:
+        """Single forward pass returning the prediction logits."""
+        enc_from, enc_to = x1, x2
+        if self.asymetric_input:
+            assert self.encoder_resolution is not None
+            enc_from = F.interpolate(enc_from, **self.encoder_resolution)
+            enc_to = F.interpolate(enc_to, **self.encoder_resolution)
+        feats_from = self.image_encoder(enc_from)
+        feats_to = self.image_encoder(enc_to)
+        assert self.decode_head is not None
+        logits = self.decode_head([x1, x2, feats_from, feats_to])
+        if logits.shape[-2:] != x1.shape[-2:]:
+            logits = F.interpolate(
+                logits,
+                size=x1.shape[-2:],
+                mode="bilinear",
+                align_corners=getattr(self.decode_head, "align_corners", False),
+            )
+        return logits

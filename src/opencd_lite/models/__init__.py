@@ -5,6 +5,7 @@ Design rule: modules in this package depend only on ``torch`` and
 be imported here.
 """
 
+from .ban import BitemporalAdapterHead
 from .bit_head import BITHead
 from .cgnet import CGNet
 from .changer_head import Changer
@@ -33,9 +34,11 @@ from .sta_head import STAHead
 from .tiny_fpn import TinyFPN
 from .tiny_head import TinyHead
 from .tinynet import TinyNet
+from .vit import VisionTransformer
 
 __all__ = [
     "BITHead",
+    "BitemporalAdapterHead",
     "CGNet",
     "ChangeStarHead",
     "Changer",
@@ -64,6 +67,7 @@ __all__ = [
     "TinyHead",
     "TinyNet",
     "TwoIdentity",
+    "VisionTransformer",
     "available_heads",
     "available_models",
     "get_head_class",

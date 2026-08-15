@@ -64,6 +64,9 @@ _LAZY_ATTRS: dict[str, str] = {
     "SegformerHead": ".models",
     "TinyNet": ".models",
     "TinyHead": ".models",
+    "VisionTransformer": ".models",
+    "BitemporalAdapterHead": ".models",
+    "BANChangeDetector": ".inference",
     "ChangeStarHead": ".models",
     "FarSegFPN": ".models",
     "FarSegHead": ".models",
@@ -78,10 +81,11 @@ if TYPE_CHECKING:
     from .checkpoint import load_opencd_checkpoint
     from .config import ConfigDict, load_config
     from .export import export_onnx
-    from .inference import ChangeDetector
+    from .inference import BANChangeDetector, ChangeDetector
     from .models import (
         FC_EF,
         IFN,
+        BitemporalAdapterHead,
         BITHead,
         CGNet,
         Changer,
@@ -106,6 +110,7 @@ if TYPE_CHECKING:
         TinyFPN,
         TinyHead,
         TinyNet,
+        VisionTransformer,
         available_heads,
         available_models,
     )
@@ -132,7 +137,9 @@ def __dir__() -> list[str]:
 
 
 __all__ = [
+    "BANChangeDetector",
     "BITHead",
+    "BitemporalAdapterHead",
     "CGNet",
     "ChangeStarHead",
     "Changer",
@@ -158,6 +165,7 @@ __all__ = [
     "TinyFPN",
     "TinyHead",
     "TinyNet",
+    "VisionTransformer",
     "ChangeDetector",
     "ConfigDict",
     "IMAGENET_SPEC",

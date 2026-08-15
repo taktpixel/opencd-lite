@@ -260,6 +260,8 @@ class MixVisionTransformer(nn.Module):
         ):
             raise ValueError("Per-stage settings must all have num_stages entries")
         self.num_stages = num_stages
+        self.embed_dims = embed_dims
+        self.num_heads = tuple(num_heads)
         self.out_indices = tuple(out_indices)
         if max(self.out_indices) >= num_stages:
             raise ValueError(f"out_indices {self.out_indices} exceed num_stages {num_stages}")
