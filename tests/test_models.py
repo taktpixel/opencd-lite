@@ -284,6 +284,36 @@ def test_ds_fpn_head_forward_shapes() -> None:
     assert out.shape == (1, 2, 16, 16)
 
 
+def test_mix_vision_transformer_forward_shapes() -> None:
+    from opencd_lite.models import MixVisionTransformer
+
+    model = MixVisionTransformer(
+        embed_dims=8,
+        num_layers=[1, 1, 1, 1],
+        num_heads=[1, 2, 2, 4],
+        sr_ratios=[8, 4, 2, 1],
+    ).eval()
+    with torch.inference_mode():
+        outs = model(torch.randn(2, 3, 64, 64))
+    # Stage widths are embed_dims * num_heads at strides 4/8/16/32.
+    assert [tuple(o.shape) for o in outs] == [
+        (2, 8, 16, 16),
+        (2, 16, 8, 8),
+        (2, 16, 4, 4),
+        (2, 32, 2, 2),
+    ]
+
+
+def test_segformer_head_forward_shapes() -> None:
+    from opencd_lite.models import SegformerHead
+
+    head = SegformerHead(in_channels=(8, 16), channels=8, num_classes=2).eval()
+    inputs = [torch.randn(2, 8, 16, 16), torch.randn(2, 16, 8, 8)]
+    with torch.inference_mode():
+        out = head(inputs)
+    assert out.shape == (2, 2, 16, 16)
+
+
 def test_bit_head_forward_shapes() -> None:
     from opencd_lite.models import BITHead
 
@@ -347,9 +377,16 @@ def test_registry_contains_supported_models() -> None:
         "IFN",
         "LightCDNet",
         "SNUNet_ECAM",
+        "mmseg.MixVisionTransformer",
         "mmseg.ResNet",
         "mmseg.ResNetV1c",
     ]
     assert get_model_class("CGNet").__name__ == "CGNet"
-    assert available_heads() == ["BITHead", "Changer", "DS_FPNHead", "STAHead"]
+    assert available_heads() == [
+        "BITHead",
+        "Changer",
+        "DS_FPNHead",
+        "STAHead",
+        "mmseg.SegformerHead",
+    ]
     assert get_head_class("BITHead").__name__ == "BITHead"

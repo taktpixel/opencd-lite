@@ -96,6 +96,19 @@ def test_load_lightcdnet_config(configs_dir: Path) -> None:
     assert cfg.model.decode_head.dropout_ratio == 0.0
 
 
+def test_load_changeformer_config(configs_dir: Path) -> None:
+    cfg = load_config(configs_dir / "changeformer" / "changeformer_mit-b1_256x256_40k_levircd.py")
+
+    assert cfg.model.type == "SiamEncoderDecoder"
+    assert cfg.model.backbone.type == "mmseg.MixVisionTransformer"
+    # The b1 leaf overrides the base embed_dims.
+    assert cfg.model.backbone.embed_dims == 64
+    assert cfg.model.neck.policy == "concat"
+    assert cfg.model.decode_head.type == "mmseg.SegformerHead"
+    # Doubled in_channels for the concatenated bi-temporal features.
+    assert list(cfg.model.decode_head.in_channels) == [128, 256, 640, 1024]
+
+
 def test_load_upstream_config_in_place() -> None:
     """The loader must read configs from the original Open-CD checkout."""
     upstream = (

@@ -15,6 +15,7 @@ from .ia_resnet import IA_ResNet, IA_ResNetV1c, IA_ResNetV1d
 from .ifn import IFN
 from .interaction import ChannelExchange, SpatialExchange, TwoIdentity
 from .lightcdnet import LightCDNet
+from .mit import MixVisionTransformer
 from .necks import FeatureFusionNeck
 from .registry import (
     available_heads,
@@ -25,6 +26,7 @@ from .registry import (
     register_model,
 )
 from .resnet import ResNet, ResNetV1c
+from .segformer_head import SegformerHead
 from .snunet import SNUNet_ECAM
 from .sta_head import STAHead
 from .tiny_fpn import TinyFPN
@@ -45,10 +47,12 @@ __all__ = [
     "IA_ResNetV1d",
     "IFN",
     "LightCDNet",
+    "MixVisionTransformer",
     "ResNet",
     "ResNetV1c",
     "SNUNet_ECAM",
     "STAHead",
+    "SegformerHead",
     "SpatialExchange",
     "TinyFPN",
     "TwoIdentity",
