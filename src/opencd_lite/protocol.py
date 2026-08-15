@@ -27,7 +27,8 @@ class InferenceConfig:
         out_index: Which element of the model's output tuple is the
             prediction (Open-CD ``decode_head.in_index``). A tuple of
             indices selects multiple outputs to feed a multi-input
-            decode head.
+            decode head; ``None`` passes the full output tuple to the
+            decode head (which then applies its own input handling).
         out_channels: Number of prediction channels; 1 means binary
             sigmoid output.
         threshold: Binarization threshold applied to the sigmoid output
@@ -38,7 +39,7 @@ class InferenceConfig:
     mode: str = "whole"
     crop_size: tuple[int, int] | None = None
     stride: tuple[int, int] | None = None
-    out_index: int | tuple[int, ...] = -1
+    out_index: int | tuple[int, ...] | None = -1
     out_channels: int = 1
     threshold: float = 0.3
 

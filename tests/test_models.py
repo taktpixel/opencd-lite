@@ -214,6 +214,76 @@ def test_sta_head_bam_mode() -> None:
     assert out.shape == (1, 1, 8, 8)
 
 
+def test_criss_cross_attention_shapes() -> None:
+    from opencd_lite.models.lightcdnet import CrissCrossAttention
+
+    attn = CrissCrossAttention(16).eval()
+    x = torch.randn(2, 16, 8, 12)
+    with torch.inference_mode():
+        out = attn(x)
+    assert out.shape == x.shape
+    # gamma starts at 0, so the module is initialized as an identity.
+    assert torch.equal(out, x)
+
+
+def test_lightcdnet_forward_shapes() -> None:
+    from opencd_lite.models import LightCDNet
+
+    model = LightCDNet(stage_repeat_num=[4, 8, 4], net_type="small").eval()
+    with torch.inference_mode():
+        outs = model(torch.randn(1, 3, 64, 64), torch.randn(1, 3, 64, 64))
+    # Early fused feature at 1/2 plus three downsampled stages.
+    assert [tuple(o.shape) for o in outs] == [
+        (1, 24, 32, 32),
+        (1, 48, 16, 16),
+        (1, 96, 8, 8),
+        (1, 192, 4, 4),
+    ]
+
+
+def test_tiny_fpn_forward_shapes() -> None:
+    from opencd_lite.models import TinyFPN
+
+    neck = TinyFPN(
+        in_channels=[24, 48, 96, 192],
+        out_channels=48,
+        num_outs=4,
+        custom_block="conv",
+        exist_early_x=True,
+        early_x_for_fpn=True,
+    ).eval()
+    inputs = [
+        torch.randn(1, 24, 32, 32),
+        torch.randn(1, 48, 16, 16),
+        torch.randn(1, 96, 8, 8),
+        torch.randn(1, 192, 4, 4),
+    ]
+    with torch.inference_mode():
+        outs = neck(inputs)
+    # The early feature is prepended unchanged before the 4 FPN levels.
+    assert torch.equal(outs[0], inputs[0])
+    assert [tuple(o.shape) for o in outs[1:]] == [
+        (1, 48, 32, 32),
+        (1, 48, 16, 16),
+        (1, 48, 8, 8),
+        (1, 48, 4, 4),
+    ]
+
+
+def test_ds_fpn_head_forward_shapes() -> None:
+    from opencd_lite.models import DS_FPNHead
+
+    head = DS_FPNHead(in_channels=(8, 8), channels=8, num_classes=2, dropout_ratio=0.0).eval()
+    inputs = [
+        torch.randn(1, 4, 32, 32),  # early feature, dropped by the head
+        torch.randn(1, 8, 16, 16),
+        torch.randn(1, 8, 8, 8),
+    ]
+    with torch.inference_mode():
+        out = head(inputs)
+    assert out.shape == (1, 2, 16, 16)
+
+
 def test_bit_head_forward_shapes() -> None:
     from opencd_lite.models import BITHead
 
@@ -275,10 +345,11 @@ def test_registry_contains_supported_models() -> None:
         "IA_ResNetV1c",
         "IA_ResNetV1d",
         "IFN",
+        "LightCDNet",
         "SNUNet_ECAM",
         "mmseg.ResNet",
         "mmseg.ResNetV1c",
     ]
     assert get_model_class("CGNet").__name__ == "CGNet"
-    assert available_heads() == ["BITHead", "Changer", "STAHead"]
+    assert available_heads() == ["BITHead", "Changer", "DS_FPNHead", "STAHead"]
     assert get_head_class("BITHead").__name__ == "BITHead"

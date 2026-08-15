@@ -20,7 +20,7 @@ from torch import nn
 from .checkpoint import load_opencd_checkpoint
 from .config import load_config
 from .inference import ChangeDetector, InferenceConfig
-from .models import ConvSegHead, FeatureFusionNeck, get_head_class, get_model_class
+from .models import ConvSegHead, FeatureFusionNeck, TinyFPN, get_head_class, get_model_class
 from .transforms import IMAGENET_SPEC, PreprocessSpec
 
 __all__ = ["IDENTITY_HEAD_TYPES", "build_model"]
@@ -72,9 +72,10 @@ def build_model(
             f"(supported: {', '.join(_SUPPORTED_DETECTOR_TYPES)})"
         )
     siamese = detector_type == "SiamEncoderDecoder"
-    if not siamese and isinstance(model_cfg.get("neck"), Mapping):
+    neck_cfg = model_cfg.get("neck")
+    if siamese and neck_cfg is None:
         raise NotImplementedError(
-            "DIEncoderDecoder configs with a 'neck' section are not supported"
+            "SiamEncoderDecoder configs without a 'neck' section are not supported yet"
         )
 
     backbone_cfg = dict(model_cfg["backbone"])
@@ -93,7 +94,7 @@ def build_model(
         preprocess=_build_preprocess_spec(model_cfg.get("data_preprocessor")),
         inference=_build_inference_config(model_cfg),
         decode_head=_build_decode_head(model_cfg.get("decode_head", {})),
-        neck=_build_neck(model_cfg.get("neck")) if siamese else None,
+        neck=_build_neck(neck_cfg) if neck_cfg is not None else None,
         siamese=siamese,
     )
     if checkpoint is not None:
@@ -127,17 +128,24 @@ def _build_decode_head(head_cfg: Mapping[str, Any]) -> nn.Module | None:
     return head_class(**head_kwargs)
 
 
-def _build_neck(neck_cfg: Mapping[str, Any] | None) -> nn.Module:
-    """Build the feature-fusion neck of a ``SiamEncoderDecoder`` config."""
-    if neck_cfg is None:
-        raise NotImplementedError(
-            "SiamEncoderDecoder configs without a 'neck' section are not supported yet"
-        )
+#: Supported neck types. ``FeatureFusionNeck`` fuses the two feature
+#: pyramids of a siamese backbone; ``TinyFPN`` refines the single fused
+#: pyramid of a dual-input backbone.
+_NECK_TYPES: dict[str, type[nn.Module]] = {
+    "FeatureFusionNeck": FeatureFusionNeck,
+    "TinyFPN": TinyFPN,
+}
+
+
+def _build_neck(neck_cfg: Mapping[str, Any]) -> nn.Module:
+    """Build the neck module of a config."""
     cfg = dict(neck_cfg)
     neck_type = cfg.pop("type")
-    if neck_type != "FeatureFusionNeck":
-        raise NotImplementedError(f"Neck type {neck_type!r} is not supported yet")
-    return FeatureFusionNeck(**cfg)
+    try:
+        neck_class = _NECK_TYPES[neck_type]
+    except KeyError:
+        raise NotImplementedError(f"Neck type {neck_type!r} is not supported yet") from None
+    return neck_class(**cfg)
 
 
 def _accepts_kwarg(callable_obj: type, name: str) -> bool:
@@ -170,13 +178,22 @@ def _build_inference_config(model_cfg: Mapping[str, Any]) -> InferenceConfig:
     if threshold is None:
         threshold = _DEFAULT_BINARY_THRESHOLD
 
-    out_index = head_cfg.get("in_index", -1)
+    out_index: int | tuple[int, ...] | None = head_cfg.get("in_index", -1)
     if isinstance(out_index, (list, tuple)):
         # Multi-input decode heads (e.g. Changer) receive the selected
         # outputs as a list; a parametric head must consume them.
-        if head_cfg.get("type", "IdentityHead") in IDENTITY_HEAD_TYPES:
+        head_type = head_cfg.get("type", "IdentityHead")
+        if head_type in IDENTITY_HEAD_TYPES:
             raise NotImplementedError("Multi-input identity heads are not supported")
         out_index = tuple(out_index)
+        # Some heads (e.g. DS_FPNHead) reproduce upstream input handling
+        # themselves and must see the full output tuple instead.
+        try:
+            head_class = get_head_class(head_type)
+        except KeyError:
+            head_class = None
+        if head_class is not None and getattr(head_class, "takes_all_outputs", False):
+            out_index = None
 
     test_cfg: Mapping[str, Any] = model_cfg.get("test_cfg") or {}
     mode = test_cfg.get("mode", "whole")

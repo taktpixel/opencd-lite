@@ -8,11 +8,13 @@ be imported here.
 from .bit_head import BITHead
 from .cgnet import CGNet
 from .changer_head import Changer
+from .ds_fpn_head import DS_FPNHead
 from .fc_siam import FC_EF, FC_Siam_conc, FC_Siam_diff
 from .heads import ConvSegHead
 from .ia_resnet import IA_ResNet, IA_ResNetV1c, IA_ResNetV1d
 from .ifn import IFN
 from .interaction import ChannelExchange, SpatialExchange, TwoIdentity
+from .lightcdnet import LightCDNet
 from .necks import FeatureFusionNeck
 from .registry import (
     available_heads,
@@ -25,6 +27,7 @@ from .registry import (
 from .resnet import ResNet, ResNetV1c
 from .snunet import SNUNet_ECAM
 from .sta_head import STAHead
+from .tiny_fpn import TinyFPN
 
 __all__ = [
     "BITHead",
@@ -32,6 +35,7 @@ __all__ = [
     "Changer",
     "ChannelExchange",
     "ConvSegHead",
+    "DS_FPNHead",
     "FC_EF",
     "FC_Siam_conc",
     "FC_Siam_diff",
@@ -40,11 +44,13 @@ __all__ = [
     "IA_ResNetV1c",
     "IA_ResNetV1d",
     "IFN",
+    "LightCDNet",
     "ResNet",
     "ResNetV1c",
     "SNUNet_ECAM",
     "STAHead",
     "SpatialExchange",
+    "TinyFPN",
     "TwoIdentity",
     "available_heads",
     "available_models",

@@ -83,6 +83,19 @@ def test_load_stanet_config(configs_dir: Path) -> None:
     assert cfg.model.test_cfg.mode == "slide"
 
 
+def test_load_lightcdnet_config(configs_dir: Path) -> None:
+    cfg = load_config(configs_dir / "lightcdnet" / "lightcdnet_b_256x256_40k_levircd.py")
+
+    assert cfg.model.type == "DIEncoderDecoder"
+    assert cfg.model.backbone.type == "LightCDNet"
+    # The base-variant leaf overrides net_type and the neck widths.
+    assert cfg.model.backbone.net_type == "base"
+    assert cfg.model.neck.type == "TinyFPN"
+    assert list(cfg.model.neck.in_channels) == [24, 116, 232, 464]
+    assert cfg.model.decode_head.type == "DS_FPNHead"
+    assert cfg.model.decode_head.dropout_ratio == 0.0
+
+
 def test_load_upstream_config_in_place() -> None:
     """The loader must read configs from the original Open-CD checkout."""
     upstream = (

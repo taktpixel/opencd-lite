@@ -77,8 +77,17 @@ class ChangeDetector(nn.Module):
             outputs = self.neck(self.backbone(x1), self.backbone(x2))
         else:
             outputs = self.backbone(x1, x2)
+            if self.neck is not None:
+                # Dual-input layout with a pyramid-refining neck
+                # (e.g. TinyFPN on LightCDNet features).
+                outputs = self.neck(outputs)
         out_index = self.inference_cfg.out_index
-        if isinstance(out_index, tuple):
+        if out_index is None:
+            # The decode head consumes the full output tuple itself
+            # (e.g. DS_FPNHead drops the early feature internally).
+            assert self.decode_head is not None, "out_index=None requires a decode head"
+            logits = self.decode_head(list(outputs))
+        elif isinstance(out_index, tuple):
             # Multi-input decode head (e.g. Changer): feed the selected
             # feature maps as a list.
             assert self.decode_head is not None, "multi-input out_index requires a decode head"

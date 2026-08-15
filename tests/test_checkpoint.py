@@ -197,6 +197,33 @@ def test_load_stanet_checkpoint_round_trip(configs_dir: Path, tmp_path: Path) ->
         assert torch.equal(fresh(x1, x2), source(x1, x2))
 
 
+def test_load_lightcdnet_checkpoint_round_trip(configs_dir: Path, tmp_path: Path) -> None:
+    """LightCDNet: dual-input backbone + parametric TinyFPN neck + DS_FPNHead."""
+    from opencd_lite import build_model
+
+    config = configs_dir / "lightcdnet" / "lightcdnet_s_256x256_40k_levircd.py"
+    source = build_model(config)
+    state_dict = {
+        **{f"backbone.{k}": v.clone() for k, v in source.backbone.state_dict().items()},
+        **{f"neck.{k}": v.clone() for k, v in source.neck.state_dict().items()},
+        **{f"decode_head.{k}": v.clone() for k, v in source.decode_head.state_dict().items()},
+        "auxiliary_head.dummy": torch.zeros(1),
+    }
+    path = tmp_path / "lightcdnet.pth"
+    torch.save({"state_dict": state_dict}, path)
+
+    fresh = build_model(config, checkpoint=path)
+    # neck.* keys are loaded (not ignored) for parametric necks.
+    assert torch.equal(
+        fresh.neck.lateral_convs[0].conv.weight,
+        source.neck.lateral_convs[0].conv.weight,
+    )
+    x1 = torch.randn(1, 3, 64, 64)
+    x2 = torch.randn(1, 3, 64, 64)
+    with torch.inference_mode():
+        assert torch.equal(fresh(x1, x2), source(x1, x2))
+
+
 def test_plain_state_dict_checkpoint(tmp_path: Path) -> None:
     """Checkpoints produced by opencd-lite itself (bare keys) also load."""
     model = CGNet(pretrained=False)
