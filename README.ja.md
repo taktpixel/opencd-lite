@@ -30,6 +30,7 @@
 | ChangeFormer (MiT-b0/b1) | [A Transformer-Based Siamese Network for Change Detection (IGARSS 2022)](https://ieeexplore.ieee.org/document/9883686) | `mmseg.MixVisionTransformer` + `mmseg.SegformerHead` | [changeformer_mit-b0_256x256_40k_levircd.pth](https://huggingface.co/likyoo/Open-CD_Model_Zoo/resolve/main/LEVIR-CD/changeformer_mit-b0_256x256_40k_levircd.pth), [changeformer_mit-b1_256x256_40k_levircd.pth](https://huggingface.co/likyoo/Open-CD_Model_Zoo/resolve/main/LEVIR-CD/changeformer_mit-b1_256x256_40k_levircd.pth) |
 | ChangeStar (FarSeg) | [Change is Everywhere (ICCV 2021)](https://arxiv.org/abs/2108.07002) | `FarSegFPN` + `ChangeStarHead` | [changestar_farseg_1x96_512x512_40k_levircd.pth](https://huggingface.co/likyoo/Open-CD_Model_Zoo/resolve/main/LEVIR-CD/changestar_farseg_1x96_512x512_40k_levircd.pth) |
 | TinyCD v2 (S/B/L) | [TinyCD v2 (Open-CD technical report)](https://arxiv.org/abs/2407.15317) | `TinyNet` + `TinyHead` | —（公開 checkpoint なし。本家実装とのアーキテクチャ一致検証済み） |
+| BAN (ViT-L/14 CLIP + MiT-b0) | [A New Learning Paradigm for Foundation Model-based RS Change Detection (TGRS 2024)](https://arxiv.org/abs/2312.01163) | `mmseg.VisionTransformer` + `BitemporalAdapterHead` | [ban_vit-l14-clip_mit-b0_512x512_40k_levircd.pth](https://huggingface.co/likyoo/Open-CD_Model_Zoo/resolve/main/LEVIR-CD/ban_vit-l14-clip_mit-b0_512x512_40k_levircd.pth) |
 
 checkpoint は Hugging Face 上の公式 [Open-CD Model Zoo](https://huggingface.co/likyoo/Open-CD_Model_Zoo) のものをそのままロードできます（`load_opencd_checkpoint` 参照）。今後インクリメンタルに追加していきます。
 

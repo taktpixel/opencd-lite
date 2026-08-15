@@ -19,7 +19,7 @@ from torch import nn
 
 from .checkpoint import load_opencd_checkpoint
 from .config import load_config
-from .inference import ChangeDetector, InferenceConfig
+from .inference import BANChangeDetector, ChangeDetector, InferenceConfig
 from .models import (
     ConvSegHead,
     FarSegFPN,
@@ -34,8 +34,9 @@ __all__ = ["IDENTITY_HEAD_TYPES", "build_model"]
 
 #: ``DIEncoderDecoder`` feeds both images to the backbone at once;
 #: ``SiamEncoderDecoder`` runs the shared backbone per image and fuses
-#: the two feature pyramids with a (parameter-free) neck.
-_SUPPORTED_DETECTOR_TYPES = ("DIEncoderDecoder", "SiamEncoderDecoder")
+#: the two feature pyramids with a neck; ``BAN`` pairs a frozen vision
+#: tower with an adapter head that also consumes the raw images.
+_SUPPORTED_DETECTOR_TYPES = ("DIEncoderDecoder", "SiamEncoderDecoder", "BAN")
 #: Parameter-free Open-CD heads: the model output already is the prediction.
 IDENTITY_HEAD_TYPES = ("IdentityHead", "DSIdentityHead")
 #: Config keys of registered decode heads that belong to the training
@@ -78,6 +79,13 @@ def build_model(
             f"Detector type {detector_type!r} is not supported yet "
             f"(supported: {', '.join(_SUPPORTED_DETECTOR_TYPES)})"
         )
+    if detector_type == "BAN":
+        ban_detector = _build_ban_detector(model_cfg)
+        if checkpoint is not None:
+            load_opencd_checkpoint(ban_detector, checkpoint)
+        ban_detector.eval()
+        return ban_detector
+
     siamese = detector_type == "SiamEncoderDecoder"
     neck_cfg = model_cfg.get("neck")
     if siamese and neck_cfg is None:
@@ -146,6 +154,25 @@ _NECK_TYPES: dict[str, type[nn.Module]] = {
     "FeatureFusionNeck": FeatureFusionNeck,
     "TinyFPN": TinyFPN,
 }
+
+
+def _build_ban_detector(model_cfg: Mapping[str, Any]) -> BANChangeDetector:
+    """Assemble a :class:`BANChangeDetector` from a BAN config."""
+    encoder_cfg = dict(model_cfg["image_encoder"])
+    encoder_type = encoder_cfg.pop("type")
+    encoder_cfg.pop("init_cfg", None)
+    image_encoder = get_model_class(encoder_type)(**encoder_cfg)
+
+    decode_head = _build_decode_head(model_cfg["decode_head"])
+    assert decode_head is not None, "BAN configs always carry a parametric decode head"
+    return BANChangeDetector(
+        image_encoder=image_encoder,
+        decode_head=decode_head,
+        preprocess=_build_preprocess_spec(model_cfg.get("data_preprocessor")),
+        inference=_build_inference_config(model_cfg),
+        asymetric_input=model_cfg.get("asymetric_input", True),
+        encoder_resolution=model_cfg.get("encoder_resolution"),
+    )
 
 
 def _build_neck(neck_cfg: Mapping[str, Any]) -> nn.Module:

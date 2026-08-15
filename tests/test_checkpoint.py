@@ -298,6 +298,49 @@ def test_load_tinycd_v2_checkpoint_round_trip(configs_dir: Path, tmp_path: Path)
         assert torch.equal(fresh(x1, x2), source(x1, x2))
 
 
+def test_load_ban_checkpoint_round_trip(tmp_path: Path, make_small_ban_head) -> None:
+    """BAN: image_encoder.* checkpoint keys load next to decode_head.*."""
+    from opencd_lite import BANChangeDetector
+    from opencd_lite.models import VisionTransformer
+
+    def make_detector() -> BANChangeDetector:
+        torch.manual_seed(1)
+        return BANChangeDetector(
+            image_encoder=VisionTransformer(
+                img_size=(16, 16),
+                patch_size=4,
+                embed_dims=24,
+                num_layers=2,
+                num_heads=2,
+                out_indices=(1,),
+                pre_norm=True,
+                output_cls_token=True,
+                frozen_exclude=[],
+            ),
+            decode_head=make_small_ban_head(),
+            encoder_resolution={"size": (16, 16), "mode": "bilinear"},
+        )
+
+    source = make_detector()
+    state_dict = {
+        **{f"image_encoder.{k}": v.clone() for k, v in source.image_encoder.state_dict().items()},
+        **{f"decode_head.{k}": v.clone() for k, v in source.decode_head.state_dict().items()},
+    }
+    path = tmp_path / "ban.pth"
+    torch.save({"state_dict": state_dict}, path)
+
+    torch.manual_seed(2)
+    fresh = make_detector()
+    report = load_opencd_checkpoint(fresh, path)
+    assert not report.missing_keys and not report.unexpected_keys
+    x1 = torch.randn(1, 3, 32, 32)
+    x2 = torch.randn(1, 3, 32, 32)
+    source.eval()
+    fresh.eval()
+    with torch.inference_mode():
+        assert torch.equal(fresh(x1, x2), source(x1, x2))
+
+
 def test_plain_state_dict_checkpoint(tmp_path: Path) -> None:
     """Checkpoints produced by opencd-lite itself (bare keys) also load."""
     model = CGNet(pretrained=False)

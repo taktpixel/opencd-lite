@@ -145,6 +145,36 @@ def test_export_tinycd_v2_to_onnx(configs_dir: Path, tmp_path: Path) -> None:
     assert onnx_path.is_file()
 
 
+def test_export_ban_to_onnx(tmp_path: Path, make_small_ban_head) -> None:
+    """BAN: frozen ViT tower + adapter head export end to end."""
+    from opencd_lite import BANChangeDetector
+    from opencd_lite.models import VisionTransformer
+
+    detector = BANChangeDetector(
+        image_encoder=VisionTransformer(
+            img_size=(16, 16),
+            patch_size=4,
+            embed_dims=24,
+            num_layers=2,
+            num_heads=2,
+            out_indices=(1,),
+            pre_norm=True,
+            output_cls_token=True,
+            frozen_exclude=[],
+        ),
+        decode_head=make_small_ban_head(),
+        encoder_resolution={"size": (16, 16), "mode": "bilinear"},
+    )
+    onnx_path = export_onnx(
+        detector,
+        tmp_path / "ban.onnx",
+        input_size=(64, 64),
+        verify=True,
+        atol=1e-4,
+    )
+    assert onnx_path.is_file()
+
+
 def test_export_detector_with_decode_head(tmp_path: Path) -> None:
     """Models with a parametric head (here SNUNet) export including the head."""
     import onnxruntime as ort

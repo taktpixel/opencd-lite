@@ -429,6 +429,72 @@ def test_tiny_head_forward_shapes() -> None:
     assert out.shape == (1, 2, 32, 32)
 
 
+def test_vision_transformer_forward_shapes() -> None:
+    from opencd_lite.models import VisionTransformer
+
+    model = VisionTransformer(
+        img_size=(32, 32),
+        patch_size=4,
+        embed_dims=16,
+        num_layers=2,
+        num_heads=2,
+        out_indices=(0, 1),
+        pre_norm=True,
+        output_cls_token=True,
+        patch_bias=False,
+        norm_cfg={"type": "LN", "eps": 1e-5},
+        act_cfg={"type": "mmseg.QuickGELU"},
+        frozen_exclude=[],
+    ).eval()
+    with torch.inference_mode():
+        outs = model(torch.randn(2, 3, 32, 32))
+    assert len(outs) == 2
+    feature, cls_token = outs[0]
+    assert feature.shape == (2, 16, 8, 8)
+    assert cls_token.shape == (2, 16)
+    # The CLIP tower is frozen (frozen_exclude=[]).
+    assert all(not p.requires_grad for p in model.parameters())
+
+
+def test_ban_head_forward_shapes(make_small_ban_head) -> None:
+    head = make_small_ban_head().eval()
+    img_from = torch.randn(1, 3, 32, 32)
+    img_to = torch.randn(1, 3, 32, 32)
+    # One fused stage: CLIP features come as [feature map, cls token].
+    clip_from = [[torch.randn(1, 24, 4, 4), torch.randn(1, 24)]]
+    clip_to = [[torch.randn(1, 24, 4, 4), torch.randn(1, 24)]]
+    with torch.inference_mode():
+        out = head([img_from, img_to, clip_from, clip_to])
+    # Classified at the first side-encoder stage's scale (1/4).
+    assert out.shape == (1, 2, 8, 8)
+
+
+def test_ban_change_detector_forward(make_small_ban_head) -> None:
+    from opencd_lite import BANChangeDetector
+    from opencd_lite.models import VisionTransformer
+
+    encoder = VisionTransformer(
+        img_size=(16, 16),
+        patch_size=4,
+        embed_dims=24,
+        num_layers=2,
+        num_heads=2,
+        out_indices=(1,),
+        pre_norm=True,
+        output_cls_token=True,
+        frozen_exclude=[],
+    )
+    detector = BANChangeDetector(
+        image_encoder=encoder,
+        decode_head=make_small_ban_head(),
+        encoder_resolution={"size": (16, 16), "mode": "bilinear"},
+    ).eval()
+    with torch.inference_mode():
+        out = detector(torch.randn(1, 3, 32, 32), torch.randn(1, 3, 32, 32))
+    # The wrapper resizes head logits to the input resolution.
+    assert out.shape == (1, 2, 32, 32)
+
+
 def test_bit_head_forward_shapes() -> None:
     from opencd_lite.models import BITHead
 
@@ -496,10 +562,12 @@ def test_registry_contains_supported_models() -> None:
         "mmseg.MixVisionTransformer",
         "mmseg.ResNet",
         "mmseg.ResNetV1c",
+        "mmseg.VisionTransformer",
     ]
     assert get_model_class("CGNet").__name__ == "CGNet"
     assert available_heads() == [
         "BITHead",
+        "BitemporalAdapterHead",
         "ChangeStarHead",
         "Changer",
         "DS_FPNHead",

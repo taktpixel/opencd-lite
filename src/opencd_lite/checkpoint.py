@@ -166,7 +166,7 @@ def _extract_detector_state_dict(
     ignored: list[str] = []
     for key, value in state_dict.items():
         if (
-            key.startswith(_BACKBONE_PREFIX)
+            key.startswith((_BACKBONE_PREFIX, "image_encoder."))
             or (key.startswith("decode_head.") and with_decode_head)
             or (key.startswith("neck.") and with_neck)
         ):
@@ -230,6 +230,7 @@ def load_opencd_checkpoint(
 
 
 def _is_bare_model(model: nn.Module) -> bool:
-    """Return True unless the module wraps its network in a ``backbone`` attribute."""
+    """Return True unless the module wraps its network under a detector attribute."""
     backbone = getattr(model, "backbone", None)
-    return not isinstance(backbone, nn.Module)
+    image_encoder = getattr(model, "image_encoder", None)
+    return not (isinstance(backbone, nn.Module) or isinstance(image_encoder, nn.Module))
