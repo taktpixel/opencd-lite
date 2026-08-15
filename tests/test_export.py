@@ -36,6 +36,21 @@ def test_export_ifn_to_onnx(ifn_small, tmp_path: Path) -> None:
     assert onnx_path.is_file()
 
 
+def test_export_bit_to_onnx(configs_dir: Path, tmp_path: Path) -> None:
+    """BIT: siamese backbone + neck + transformer head export end to end."""
+    from opencd_lite import build_model
+
+    detector = build_model(configs_dir / "bit" / "bit_r18_256x256_40k_levircd.py")
+    onnx_path = export_onnx(
+        detector,
+        tmp_path / "bit.onnx",
+        input_size=(64, 64),
+        verify=True,
+        atol=1e-4,
+    )
+    assert onnx_path.is_file()
+
+
 def test_export_detector_with_decode_head(tmp_path: Path) -> None:
     """Models with a parametric head (here SNUNet) export including the head."""
     import onnxruntime as ort

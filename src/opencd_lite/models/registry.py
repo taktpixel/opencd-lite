@@ -14,6 +14,7 @@ from typing import TypeVar
 from torch import nn
 
 _MODELS: dict[str, type[nn.Module]] = {}
+_HEADS: dict[str, type[nn.Module]] = {}
 
 _T = TypeVar("_T", bound=type[nn.Module])
 
@@ -28,6 +29,32 @@ def register_model(name: str) -> Callable[[_T], _T]:
         return cls
 
     return decorator
+
+
+def register_head(name: str) -> Callable[[_T], _T]:
+    """Class decorator registering a decode head under its Open-CD ``type`` name."""
+
+    def decorator(cls: _T) -> _T:
+        if name in _HEADS:
+            raise ValueError(f"Decode head {name!r} is already registered")
+        _HEADS[name] = cls
+        return cls
+
+    return decorator
+
+
+def get_head_class(name: str) -> type[nn.Module]:
+    """Look up a registered decode head class by its Open-CD ``type`` name."""
+    try:
+        return _HEADS[name]
+    except KeyError:
+        supported = ", ".join(sorted(_HEADS))
+        raise KeyError(f"Unknown decode head type {name!r}. Supported types: {supported}") from None
+
+
+def available_heads() -> list[str]:
+    """Return the sorted list of registered decode head type names."""
+    return sorted(_HEADS)
 
 
 def get_model_class(name: str) -> type[nn.Module]:

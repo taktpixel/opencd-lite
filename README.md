@@ -23,6 +23,7 @@ Lightweight, mmlab-free PyTorch implementation of [Open-CD](https://github.com/l
 | FC-Siam-diff | [Fully convolutional siamese networks (ICIP 2018)](https://ieeexplore.ieee.org/document/8451652) | `FC_Siam_diff` | [fc_siam_diff_256x256_40k_levircd.pth](https://huggingface.co/likyoo/Open-CD_Model_Zoo/resolve/main/LEVIR-CD/fc_siam_diff_256x256_40k_levircd.pth) |
 | FC-Siam-conc | [Fully convolutional siamese networks (ICIP 2018)](https://ieeexplore.ieee.org/document/8451652) | `FC_Siam_conc` | [fc_siam_conc_256x256_40k_levircd.pth](https://huggingface.co/likyoo/Open-CD_Model_Zoo/resolve/main/LEVIR-CD/fc_siam_conc_256x256_40k_levircd.pth) |
 | SNUNet (ECAM) | [SNUNet-CD (GRSL 2021)](https://ieeexplore.ieee.org/document/9355573) | `SNUNet_ECAM` | [snunet_c16_256x256_40k_levircd.pth](https://huggingface.co/likyoo/Open-CD_Model_Zoo/resolve/main/LEVIR-CD/snunet_c16_256x256_40k_levircd.pth) |
+| BIT | [Remote Sensing Image Change Detection with Transformers (TGRS 2022)](https://ieeexplore.ieee.org/document/9491802) | `mmseg.ResNetV1c` + `BITHead` | [bit_r18_256x256_40k_levircd.pth](https://huggingface.co/likyoo/Open-CD_Model_Zoo/resolve/main/LEVIR-CD/bit_r18_256x256_40k_levircd.pth) |
 
 Checkpoints come from the official [Open-CD Model Zoo](https://huggingface.co/likyoo/Open-CD_Model_Zoo) on Hugging Face and load as-is (see `load_opencd_checkpoint`). More models will be ported incrementally.
 
@@ -67,7 +68,7 @@ from opencd_lite import build_model
 
 detector = build_model(
     "configs/cgnet/cgnet_256x256_40k_levircd.py",  # upstream configs work as-is
-    checkpoint="cgnet_levircd.pth",                # published Open-CD weights
+    checkpoint="cgnet_levircd.pth",  # published Open-CD weights
 )
 
 # predict() reproduces the Open-CD test-time protocol

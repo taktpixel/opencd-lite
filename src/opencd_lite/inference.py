@@ -24,7 +24,9 @@ class ChangeDetector(nn.Module):
     Args:
         model: The bare change detection network. Its ``forward`` must
             accept two ``(B, 3, H, W)`` tensors and return a tuple of
-            output tensors.
+            output tensors — unless ``siamese`` is set, in which case it
+            is applied to each image separately and must accept a single
+            ``(B, 3, H, W)`` tensor.
         preprocess: Normalization/padding specification.
         inference: Test-time protocol (mode, output selection,
             binarization).
@@ -32,6 +34,13 @@ class ChangeDetector(nn.Module):
             :class:`~opencd_lite.models.ConvSegHead`) applied to the
             selected model output. ``None`` when the model emits logits
             directly (Open-CD ``IdentityHead`` configurations).
+        neck: Parameter-free fusion of the two feature pyramids (e.g.
+            :class:`~opencd_lite.models.FeatureFusionNeck`). Required
+            when ``siamese`` is set.
+        siamese: Run the (shared-weight) model on each image separately
+            and fuse the results with ``neck`` — Open-CD's
+            ``SiamEncoderDecoder`` layout. When False the model receives
+            both images at once (``DIEncoderDecoder`` layout).
     """
 
     def __init__(
@@ -40,12 +49,18 @@ class ChangeDetector(nn.Module):
         preprocess: PreprocessSpec = IMAGENET_SPEC,
         inference: InferenceConfig | None = None,
         decode_head: nn.Module | None = None,
+        neck: nn.Module | None = None,
+        siamese: bool = False,
     ) -> None:
         super().__init__()
+        if siamese and neck is None:
+            raise ValueError("siamese=True requires a neck to fuse the feature pyramids")
         # Attribute names mirror the Open-CD checkpoint key layout
         # ("backbone.*", "decode_head.*") so checkpoints load directly.
         self.backbone = model
         self.decode_head = decode_head
+        self.neck = neck
+        self.siamese = siamese
         self.preprocess = preprocess
         self.inference_cfg = inference if inference is not None else InferenceConfig()
 
@@ -56,7 +71,11 @@ class ChangeDetector(nn.Module):
         ``H``/``W`` compatible with the model. This is the graph exported
         to ONNX.
         """
-        outputs = self.backbone(x1, x2)
+        if self.siamese:
+            assert self.neck is not None
+            outputs = self.neck(self.backbone(x1), self.backbone(x2))
+        else:
+            outputs = self.backbone(x1, x2)
         logits = outputs[self.inference_cfg.out_index]
         if self.decode_head is not None:
             logits = self.decode_head(logits)

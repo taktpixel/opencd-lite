@@ -94,7 +94,9 @@ select = [
 ignore = ["E741"]
 
 [tool.mypy]
-python_version = "3.11"
+# Kept at the newest supported minor: recent numpy stubs use PEP 695
+# `type` statements, which mypy rejects when targeting < 3.12.
+python_version = "3.12"
 files = ["src/opencd_lite"]
 ignore_missing_imports = true
 check_untyped_defs = true

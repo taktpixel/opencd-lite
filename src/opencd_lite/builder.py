@@ -20,14 +20,20 @@ from torch import nn
 from .checkpoint import load_opencd_checkpoint
 from .config import load_config
 from .inference import ChangeDetector, InferenceConfig
-from .models import ConvSegHead, get_model_class
+from .models import ConvSegHead, FeatureFusionNeck, get_head_class, get_model_class
 from .transforms import IMAGENET_SPEC, PreprocessSpec
 
 __all__ = ["IDENTITY_HEAD_TYPES", "build_model"]
 
-_SUPPORTED_DETECTOR_TYPES = ("DIEncoderDecoder",)
+#: ``DIEncoderDecoder`` feeds both images to the backbone at once;
+#: ``SiamEncoderDecoder`` runs the shared backbone per image and fuses
+#: the two feature pyramids with a (parameter-free) neck.
+_SUPPORTED_DETECTOR_TYPES = ("DIEncoderDecoder", "SiamEncoderDecoder")
 #: Parameter-free Open-CD heads: the model output already is the prediction.
 IDENTITY_HEAD_TYPES = ("IdentityHead", "DSIdentityHead")
+#: Config keys of registered decode heads that belong to the training
+#: harness (or are handled by the inference wrapper), not the module.
+_HEAD_HARNESS_KEYS = ("type", "loss_decode", "sampler", "ignore_index", "in_index")
 #: mmseg's BaseDecodeHead default when a binary head leaves threshold unset.
 _DEFAULT_BINARY_THRESHOLD = 0.3
 #: mmseg's BaseDecodeHead default dropout before the classifier.
@@ -65,8 +71,11 @@ def build_model(
             f"Detector type {detector_type!r} is not supported yet "
             f"(supported: {', '.join(_SUPPORTED_DETECTOR_TYPES)})"
         )
-    if isinstance(model_cfg.get("neck"), Mapping):
-        raise NotImplementedError("Configs with a 'neck' section are not supported yet")
+    siamese = detector_type == "SiamEncoderDecoder"
+    if not siamese and isinstance(model_cfg.get("neck"), Mapping):
+        raise NotImplementedError(
+            "DIEncoderDecoder configs with a 'neck' section are not supported"
+        )
 
     backbone_cfg = dict(model_cfg["backbone"])
     model_type = backbone_cfg.pop("type")
@@ -84,6 +93,8 @@ def build_model(
         preprocess=_build_preprocess_spec(model_cfg.get("data_preprocessor")),
         inference=_build_inference_config(model_cfg),
         decode_head=_build_decode_head(model_cfg.get("decode_head", {})),
+        neck=_build_neck(model_cfg.get("neck")) if siamese else None,
+        siamese=siamese,
     )
     if checkpoint is not None:
         load_opencd_checkpoint(detector, checkpoint)
@@ -108,7 +119,25 @@ def _build_decode_head(head_cfg: Mapping[str, Any]) -> nn.Module | None:
             num_classes=head_cfg.get("out_channels", head_cfg["num_classes"]),
             dropout_ratio=head_cfg.get("dropout_ratio", _DEFAULT_HEAD_DROPOUT),
         )
-    raise NotImplementedError(f"Decode head type {head_type!r} is not supported yet")
+    try:
+        head_class = get_head_class(head_type)
+    except KeyError:
+        raise NotImplementedError(f"Decode head type {head_type!r} is not supported yet") from None
+    head_kwargs = {k: v for k, v in head_cfg.items() if k not in _HEAD_HARNESS_KEYS}
+    return head_class(**head_kwargs)
+
+
+def _build_neck(neck_cfg: Mapping[str, Any] | None) -> nn.Module:
+    """Build the feature-fusion neck of a ``SiamEncoderDecoder`` config."""
+    if neck_cfg is None:
+        raise NotImplementedError(
+            "SiamEncoderDecoder configs without a 'neck' section are not supported yet"
+        )
+    cfg = dict(neck_cfg)
+    neck_type = cfg.pop("type")
+    if neck_type != "FeatureFusionNeck":
+        raise NotImplementedError(f"Neck type {neck_type!r} is not supported yet")
+    return FeatureFusionNeck(**cfg)
 
 
 def _accepts_kwarg(callable_obj: type, name: str) -> bool:
