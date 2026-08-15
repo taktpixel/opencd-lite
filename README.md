@@ -68,7 +68,7 @@ from opencd_lite import build_model
 
 detector = build_model(
     "configs/cgnet/cgnet_256x256_40k_levircd.py",  # upstream configs work as-is
-    checkpoint="cgnet_levircd.pth",                # published Open-CD weights
+    checkpoint="cgnet_levircd.pth",  # published Open-CD weights
 )
 
 # predict() reproduces the Open-CD test-time protocol
