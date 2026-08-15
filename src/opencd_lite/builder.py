@@ -19,21 +19,29 @@ from torch import nn
 
 from .checkpoint import load_opencd_checkpoint
 from .config import load_config
-from .inference import ChangeDetector, InferenceConfig
-from .models import ConvSegHead, FeatureFusionNeck, get_head_class, get_model_class
+from .inference import BANChangeDetector, ChangeDetector, InferenceConfig
+from .models import (
+    ConvSegHead,
+    FarSegFPN,
+    FeatureFusionNeck,
+    TinyFPN,
+    get_head_class,
+    get_model_class,
+)
 from .transforms import IMAGENET_SPEC, PreprocessSpec
 
 __all__ = ["IDENTITY_HEAD_TYPES", "build_model"]
 
 #: ``DIEncoderDecoder`` feeds both images to the backbone at once;
 #: ``SiamEncoderDecoder`` runs the shared backbone per image and fuses
-#: the two feature pyramids with a (parameter-free) neck.
-_SUPPORTED_DETECTOR_TYPES = ("DIEncoderDecoder", "SiamEncoderDecoder")
+#: the two feature pyramids with a neck; ``BAN`` pairs a frozen vision
+#: tower with an adapter head that also consumes the raw images.
+_SUPPORTED_DETECTOR_TYPES = ("DIEncoderDecoder", "SiamEncoderDecoder", "BAN")
 #: Parameter-free Open-CD heads: the model output already is the prediction.
 IDENTITY_HEAD_TYPES = ("IdentityHead", "DSIdentityHead")
 #: Config keys of registered decode heads that belong to the training
 #: harness (or are handled by the inference wrapper), not the module.
-_HEAD_HARNESS_KEYS = ("type", "loss_decode", "sampler", "ignore_index", "in_index")
+_HEAD_HARNESS_KEYS = ("type", "loss_decode", "sampler", "ignore_index", "in_index", "init_cfg")
 #: mmseg's BaseDecodeHead default when a binary head leaves threshold unset.
 _DEFAULT_BINARY_THRESHOLD = 0.3
 #: mmseg's BaseDecodeHead default dropout before the classifier.
@@ -71,14 +79,25 @@ def build_model(
             f"Detector type {detector_type!r} is not supported yet "
             f"(supported: {', '.join(_SUPPORTED_DETECTOR_TYPES)})"
         )
+    if detector_type == "BAN":
+        ban_detector = _build_ban_detector(model_cfg)
+        if checkpoint is not None:
+            load_opencd_checkpoint(ban_detector, checkpoint)
+        ban_detector.eval()
+        return ban_detector
+
     siamese = detector_type == "SiamEncoderDecoder"
-    if not siamese and isinstance(model_cfg.get("neck"), Mapping):
+    neck_cfg = model_cfg.get("neck")
+    if siamese and neck_cfg is None:
         raise NotImplementedError(
-            "DIEncoderDecoder configs with a 'neck' section are not supported"
+            "SiamEncoderDecoder configs without a 'neck' section are not supported yet"
         )
 
     backbone_cfg = dict(model_cfg["backbone"])
     model_type = backbone_cfg.pop("type")
+    # Training-time initialization instructions (ImageNet et al.); the
+    # loaded checkpoint overwrites every weight anyway.
+    backbone_cfg.pop("init_cfg", None)
     model_class = get_model_class(model_type)
     if checkpoint is not None and _accepts_kwarg(model_class, "pretrained"):
         # The checkpoint overwrites every weight; skip the (large) download
@@ -93,7 +112,7 @@ def build_model(
         preprocess=_build_preprocess_spec(model_cfg.get("data_preprocessor")),
         inference=_build_inference_config(model_cfg),
         decode_head=_build_decode_head(model_cfg.get("decode_head", {})),
-        neck=_build_neck(model_cfg.get("neck")) if siamese else None,
+        neck=_build_neck(neck_cfg) if neck_cfg is not None else None,
         siamese=siamese,
     )
     if checkpoint is not None:
@@ -127,17 +146,44 @@ def _build_decode_head(head_cfg: Mapping[str, Any]) -> nn.Module | None:
     return head_class(**head_kwargs)
 
 
-def _build_neck(neck_cfg: Mapping[str, Any] | None) -> nn.Module:
-    """Build the feature-fusion neck of a ``SiamEncoderDecoder`` config."""
-    if neck_cfg is None:
-        raise NotImplementedError(
-            "SiamEncoderDecoder configs without a 'neck' section are not supported yet"
-        )
+#: Supported neck types. ``FeatureFusionNeck`` fuses the two feature
+#: pyramids of a siamese backbone; ``TinyFPN`` refines the single fused
+#: pyramid of a dual-input backbone.
+_NECK_TYPES: dict[str, type[nn.Module]] = {
+    "FarSegFPN": FarSegFPN,
+    "FeatureFusionNeck": FeatureFusionNeck,
+    "TinyFPN": TinyFPN,
+}
+
+
+def _build_ban_detector(model_cfg: Mapping[str, Any]) -> BANChangeDetector:
+    """Assemble a :class:`BANChangeDetector` from a BAN config."""
+    encoder_cfg = dict(model_cfg["image_encoder"])
+    encoder_type = encoder_cfg.pop("type")
+    encoder_cfg.pop("init_cfg", None)
+    image_encoder = get_model_class(encoder_type)(**encoder_cfg)
+
+    decode_head = _build_decode_head(model_cfg["decode_head"])
+    assert decode_head is not None, "BAN configs always carry a parametric decode head"
+    return BANChangeDetector(
+        image_encoder=image_encoder,
+        decode_head=decode_head,
+        preprocess=_build_preprocess_spec(model_cfg.get("data_preprocessor")),
+        inference=_build_inference_config(model_cfg),
+        asymetric_input=model_cfg.get("asymetric_input", True),
+        encoder_resolution=model_cfg.get("encoder_resolution"),
+    )
+
+
+def _build_neck(neck_cfg: Mapping[str, Any]) -> nn.Module:
+    """Build the neck module of a config."""
     cfg = dict(neck_cfg)
     neck_type = cfg.pop("type")
-    if neck_type != "FeatureFusionNeck":
-        raise NotImplementedError(f"Neck type {neck_type!r} is not supported yet")
-    return FeatureFusionNeck(**cfg)
+    try:
+        neck_class = _NECK_TYPES[neck_type]
+    except KeyError:
+        raise NotImplementedError(f"Neck type {neck_type!r} is not supported yet") from None
+    return neck_class(**cfg)
 
 
 def _accepts_kwarg(callable_obj: type, name: str) -> bool:
@@ -170,9 +216,22 @@ def _build_inference_config(model_cfg: Mapping[str, Any]) -> InferenceConfig:
     if threshold is None:
         threshold = _DEFAULT_BINARY_THRESHOLD
 
-    out_index = head_cfg.get("in_index", -1)
+    out_index: int | tuple[int, ...] | None = head_cfg.get("in_index", -1)
     if isinstance(out_index, (list, tuple)):
-        raise NotImplementedError("Multi-input decode heads are not supported yet")
+        # Multi-input decode heads (e.g. Changer) receive the selected
+        # outputs as a list; a parametric head must consume them.
+        head_type = head_cfg.get("type", "IdentityHead")
+        if head_type in IDENTITY_HEAD_TYPES:
+            raise NotImplementedError("Multi-input identity heads are not supported")
+        out_index = tuple(out_index)
+        # Some heads (e.g. DS_FPNHead) reproduce upstream input handling
+        # themselves and must see the full output tuple instead.
+        try:
+            head_class = get_head_class(head_type)
+        except KeyError:
+            head_class = None
+        if head_class is not None and getattr(head_class, "takes_all_outputs", False):
+            out_index = None
 
     test_cfg: Mapping[str, Any] = model_cfg.get("test_cfg") or {}
     mode = test_cfg.get("mode", "whole")

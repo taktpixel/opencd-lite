@@ -26,8 +26,10 @@ class ConvModule(nn.Module):
         norm: Insert a BatchNorm2d between convolution and activation.
             Mirrors mmcv's ``norm_cfg=dict(type='BN')``; the convolution
             bias is disabled automatically, as in mmcv's ``bias='auto'``.
-        act: Apply a ReLU after the (normalized) convolution. Mirrors
-            mmcv's default ``act_cfg=dict(type='ReLU')``.
+        act: Activation after the (normalized) convolution: ``True`` or
+            ``"relu"`` for ReLU (mmcv's default
+            ``act_cfg=dict(type='ReLU')``), ``"relu6"`` for ReLU6,
+            ``False`` for none.
     """
 
     def __init__(
@@ -41,7 +43,7 @@ class ConvModule(nn.Module):
         dilation: int = 1,
         groups: int = 1,
         norm: bool = False,
-        act: bool = True,
+        act: bool | str = True,
     ) -> None:
         super().__init__()
         self.conv = nn.Conv2d(
@@ -55,7 +57,15 @@ class ConvModule(nn.Module):
             bias=not norm,
         )
         self.bn = nn.BatchNorm2d(out_channels) if norm else None
-        self.activate = nn.ReLU(inplace=True) if act else None
+        self.activate: nn.Module | None
+        if act is False:
+            self.activate = None
+        elif act is True or act == "relu":
+            self.activate = nn.ReLU(inplace=True)
+        elif act == "relu6":
+            self.activate = nn.ReLU6(inplace=True)
+        else:
+            raise ValueError(f"Unsupported activation {act!r} (True/'relu'/'relu6'/False)")
 
     def forward(self, x: Tensor) -> Tensor:
         x = self.conv(x)

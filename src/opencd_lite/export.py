@@ -116,16 +116,27 @@ def _export(
             dynamo=use_dynamo,
         )
 
-    if dynamo:
-        try:
-            run(use_dynamo=True)
-            return
-        except Exception:  # noqa: BLE001 - deliberate fallback path
-            logger.warning(
-                "Dynamo ONNX export failed; falling back to the legacy exporter",
-                exc_info=True,
-            )
-    run(use_dynamo=False)
+    # nn.MultiheadAttention's fused inference kernel
+    # (aten::_native_multi_head_attention) has no ONNX lowering; force
+    # the decomposed path while tracing (transformer-based models).
+    mha_backend = getattr(torch.backends, "mha", None)
+    fastpath_was_enabled = mha_backend.get_fastpath_enabled() if mha_backend is not None else None
+    if mha_backend is not None:
+        mha_backend.set_fastpath_enabled(False)
+    try:
+        if dynamo:
+            try:
+                run(use_dynamo=True)
+                return
+            except Exception:  # noqa: BLE001 - deliberate fallback path
+                logger.warning(
+                    "Dynamo ONNX export failed; falling back to the legacy exporter",
+                    exc_info=True,
+                )
+        run(use_dynamo=False)
+    finally:
+        if mha_backend is not None and fastpath_was_enabled is not None:
+            mha_backend.set_fastpath_enabled(fastpath_was_enabled)
 
 
 def verify_onnx(

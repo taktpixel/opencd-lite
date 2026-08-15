@@ -134,6 +134,367 @@ def test_feature_fusion_neck_policies() -> None:
     assert total.eq(6.0).all()
 
 
+def test_interaction_layers() -> None:
+    from opencd_lite.models import ChannelExchange, SpatialExchange, TwoIdentity
+
+    x1 = torch.arange(2 * 4 * 2 * 4, dtype=torch.float32).reshape(2, 4, 2, 4)
+    x2 = -x1
+
+    y1, y2 = TwoIdentity()(x1, x2)
+    assert torch.equal(y1, x1) and torch.equal(y2, x2)
+
+    # Channels at even indices are exchanged (p=1/2 -> period 2).
+    y1, y2 = ChannelExchange(p=1 / 2)(x1, x2)
+    assert torch.equal(y1[:, 0], x2[:, 0]) and torch.equal(y1[:, 1], x1[:, 1])
+    assert torch.equal(y2[:, 0], x1[:, 0]) and torch.equal(y2[:, 1], x2[:, 1])
+
+    # Columns at even indices are exchanged.
+    y1, y2 = SpatialExchange(p=1 / 2)(x1, x2)
+    assert torch.equal(y1[..., 0], x2[..., 0]) and torch.equal(y1[..., 1], x1[..., 1])
+    assert torch.equal(y2[..., 0], x1[..., 0]) and torch.equal(y2[..., 1], x2[..., 1])
+
+
+def test_ia_resnet_forward_shapes() -> None:
+    from opencd_lite.models import IA_ResNetV1c
+
+    model = IA_ResNetV1c(
+        depth=18,
+        interaction_cfg=(
+            None,
+            {"type": "SpatialExchange", "p": 1 / 2},
+            {"type": "ChannelExchange", "p": 1 / 2},
+            {"type": "ChannelExchange", "p": 1 / 2},
+        ),
+    ).eval()
+    with torch.inference_mode():
+        outs = model(torch.randn(2, 3, 64, 64), torch.randn(2, 3, 64, 64))
+    # Each stage output concatenates the two temporal feature maps.
+    assert [tuple(o.shape) for o in outs] == [
+        (2, 128, 16, 16),
+        (2, 256, 8, 8),
+        (2, 512, 4, 4),
+        (2, 1024, 2, 2),
+    ]
+
+
+def test_changer_head_forward_shapes() -> None:
+    from opencd_lite.models import Changer
+
+    head = Changer(in_channels=(8, 16), channels=8, num_classes=2).eval()
+    # Two stages of concatenated bi-temporal features at 1/4 and 1/8 scale.
+    inputs = [torch.randn(2, 16, 16, 16), torch.randn(2, 32, 8, 8)]
+    with torch.inference_mode():
+        out = head(inputs)
+    # The head classifies at the resolution of the first stage.
+    assert out.shape == (2, 2, 16, 16)
+
+
+def test_sta_head_forward_shapes() -> None:
+    from opencd_lite.models import STAHead
+
+    head = STAHead(in_channels=(8, 16), channels=8, sa_in_channels=16, sa_mode="PAM").eval()
+    inputs = [torch.randn(2, 16, 16, 16), torch.randn(2, 32, 8, 8)]
+    with torch.inference_mode():
+        out = head(inputs)
+    # A single-channel +/-100 pseudo-logit map at the first stage scale.
+    assert out.shape == (2, 1, 16, 16)
+    assert set(out.unique().tolist()) <= {-100.0, 100.0}
+    with torch.inference_mode():
+        dist = head.forward_distance(inputs)
+    assert dist.shape == (2, 1, 16, 16)
+    assert (dist >= 0).all()
+
+
+def test_sta_head_bam_mode() -> None:
+    from opencd_lite.models import STAHead
+
+    head = STAHead(in_channels=(8,), channels=8, sa_in_channels=16, sa_mode="BAM", sa_ds=1).eval()
+    with torch.inference_mode():
+        out = head([torch.randn(1, 16, 8, 8)])
+    assert out.shape == (1, 1, 8, 8)
+
+
+def test_criss_cross_attention_shapes() -> None:
+    from opencd_lite.models.lightcdnet import CrissCrossAttention
+
+    attn = CrissCrossAttention(16).eval()
+    x = torch.randn(2, 16, 8, 12)
+    with torch.inference_mode():
+        out = attn(x)
+    assert out.shape == x.shape
+    # gamma starts at 0, so the module is initialized as an identity.
+    assert torch.equal(out, x)
+
+
+def test_lightcdnet_forward_shapes() -> None:
+    from opencd_lite.models import LightCDNet
+
+    model = LightCDNet(stage_repeat_num=[4, 8, 4], net_type="small").eval()
+    with torch.inference_mode():
+        outs = model(torch.randn(1, 3, 64, 64), torch.randn(1, 3, 64, 64))
+    # Early fused feature at 1/2 plus three downsampled stages.
+    assert [tuple(o.shape) for o in outs] == [
+        (1, 24, 32, 32),
+        (1, 48, 16, 16),
+        (1, 96, 8, 8),
+        (1, 192, 4, 4),
+    ]
+
+
+def test_tiny_fpn_forward_shapes() -> None:
+    from opencd_lite.models import TinyFPN
+
+    neck = TinyFPN(
+        in_channels=[24, 48, 96, 192],
+        out_channels=48,
+        num_outs=4,
+        custom_block="conv",
+        exist_early_x=True,
+        early_x_for_fpn=True,
+    ).eval()
+    inputs = [
+        torch.randn(1, 24, 32, 32),
+        torch.randn(1, 48, 16, 16),
+        torch.randn(1, 96, 8, 8),
+        torch.randn(1, 192, 4, 4),
+    ]
+    with torch.inference_mode():
+        outs = neck(inputs)
+    # The early feature is prepended unchanged before the 4 FPN levels.
+    assert torch.equal(outs[0], inputs[0])
+    assert [tuple(o.shape) for o in outs[1:]] == [
+        (1, 48, 32, 32),
+        (1, 48, 16, 16),
+        (1, 48, 8, 8),
+        (1, 48, 4, 4),
+    ]
+
+
+def test_ds_fpn_head_forward_shapes() -> None:
+    from opencd_lite.models import DS_FPNHead
+
+    head = DS_FPNHead(in_channels=(8, 8), channels=8, num_classes=2, dropout_ratio=0.0).eval()
+    inputs = [
+        torch.randn(1, 4, 32, 32),  # early feature, dropped by the head
+        torch.randn(1, 8, 16, 16),
+        torch.randn(1, 8, 8, 8),
+    ]
+    with torch.inference_mode():
+        out = head(inputs)
+    assert out.shape == (1, 2, 16, 16)
+
+
+def test_mix_vision_transformer_forward_shapes() -> None:
+    from opencd_lite.models import MixVisionTransformer
+
+    model = MixVisionTransformer(
+        embed_dims=8,
+        num_layers=[1, 1, 1, 1],
+        num_heads=[1, 2, 2, 4],
+        sr_ratios=[8, 4, 2, 1],
+    ).eval()
+    with torch.inference_mode():
+        outs = model(torch.randn(2, 3, 64, 64))
+    # Stage widths are embed_dims * num_heads at strides 4/8/16/32.
+    assert [tuple(o.shape) for o in outs] == [
+        (2, 8, 16, 16),
+        (2, 16, 8, 8),
+        (2, 16, 4, 4),
+        (2, 32, 2, 2),
+    ]
+
+
+def test_segformer_head_forward_shapes() -> None:
+    from opencd_lite.models import SegformerHead
+
+    head = SegformerHead(in_channels=(8, 16), channels=8, num_classes=2).eval()
+    inputs = [torch.randn(2, 8, 16, 16), torch.randn(2, 16, 8, 8)]
+    with torch.inference_mode():
+        out = head(inputs)
+    assert out.shape == (2, 2, 16, 16)
+
+
+def test_farseg_fpn_forward_shapes() -> None:
+    from opencd_lite.models import FarSegFPN
+
+    neck = FarSegFPN(policy="concat", in_channels=(8, 16), out_channels=8, num_outs=2).eval()
+    feats1 = (torch.randn(1, 8, 16, 16), torch.randn(1, 16, 8, 8))
+    feats2 = (torch.randn(1, 8, 16, 16), torch.randn(1, 16, 8, 8))
+    with torch.inference_mode():
+        outs = neck(feats1, feats2)
+    # Two fused FPN levels plus the fused global scene embedding.
+    assert [tuple(o.shape) for o in outs] == [
+        (1, 16, 16, 16),
+        (1, 16, 8, 8),
+        (1, 32, 1, 1),
+    ]
+
+
+def test_changestar_head_forward_shapes() -> None:
+    from opencd_lite.models import ChangeStarHead
+
+    head = ChangeStarHead(
+        inference_mode="mean",
+        seg_head_cfg={
+            "type": "FarSegHead",
+            "in_channels": (8, 8, 8, 8, 16),
+            "fsr_channels": 8,
+            "channels": 8,
+        },
+        changemixin_cfg={"in_channels": 16, "inner_channels": 8, "num_convs": 1},
+        channels=8,
+        num_classes=2,
+        out_channels=1,
+    ).eval()
+    inputs = [
+        torch.randn(1, 16, 32, 32),
+        torch.randn(1, 16, 16, 16),
+        torch.randn(1, 16, 8, 8),
+        torch.randn(1, 16, 4, 4),
+        torch.randn(1, 32, 1, 1),
+    ]
+    with torch.inference_mode():
+        out = head(inputs)
+    # Single-channel change logits at the finest FPN scale.
+    assert out.shape == (1, 1, 32, 32)
+    # The inner segmentation classifier is replaced with an identity.
+    from torch import nn
+
+    assert isinstance(head.seg_head.conv_seg, nn.Identity)
+
+
+def test_tinynet_forward_shapes() -> None:
+    from opencd_lite.models import TinyNet
+
+    model = TinyNet(
+        arch="S",
+        widen_factor=0.5,
+        output_early_x=True,
+        strip_kernel_size=(7, 7, 7, 7),
+    ).eval()
+    with torch.inference_mode():
+        outs = model(torch.randn(1, 3, 64, 64), torch.randn(1, 3, 64, 64))
+    # Early concatenated stem feature plus the four trunk stages.
+    assert [tuple(o.shape) for o in outs] == [
+        (1, 16, 32, 32),
+        (1, 8, 32, 32),
+        (1, 16, 16, 16),
+        (1, 16, 8, 8),
+        (1, 24, 4, 4),
+    ]
+
+
+def test_tiny_fpn_tinyblock_forward_shapes() -> None:
+    from opencd_lite.models import TinyFPN
+    from opencd_lite.models.tinynet import TinyBlock
+
+    neck = TinyFPN(
+        in_channels=[8, 16],
+        out_channels=8,
+        num_outs=2,
+        custom_block="tinyblock",
+        exist_early_x=True,
+    ).eval()
+    assert isinstance(neck.fpn_convs[0], TinyBlock)
+    inputs = [
+        torch.randn(1, 16, 32, 32),  # early feature (not fed to the FPN)
+        torch.randn(1, 8, 16, 16),
+        torch.randn(1, 16, 8, 8),
+    ]
+    with torch.inference_mode():
+        outs = neck(inputs)
+    assert torch.equal(outs[0], inputs[0])
+    assert [tuple(o.shape) for o in outs[1:]] == [(1, 8, 16, 16), (1, 8, 8, 8)]
+
+
+def test_tiny_head_forward_shapes() -> None:
+    from opencd_lite.models import TinyHead
+
+    head = TinyHead(
+        in_channels=(16, 8, 8),
+        feature_strides=(2, 2, 4),
+        priori_attn=True,
+        channels=8,
+        num_classes=2,
+        dropout_ratio=0.0,
+    ).eval()
+    inputs = [
+        torch.randn(1, 16, 32, 32),  # early stem feature (attention gate)
+        torch.randn(1, 8, 16, 16),
+        torch.randn(1, 8, 8, 8),
+    ]
+    with torch.inference_mode():
+        out = head(inputs)
+    # The gated output is resized to the early feature's resolution.
+    assert out.shape == (1, 2, 32, 32)
+
+
+def test_vision_transformer_forward_shapes() -> None:
+    from opencd_lite.models import VisionTransformer
+
+    model = VisionTransformer(
+        img_size=(32, 32),
+        patch_size=4,
+        embed_dims=16,
+        num_layers=2,
+        num_heads=2,
+        out_indices=(0, 1),
+        pre_norm=True,
+        output_cls_token=True,
+        patch_bias=False,
+        norm_cfg={"type": "LN", "eps": 1e-5},
+        act_cfg={"type": "mmseg.QuickGELU"},
+        frozen_exclude=[],
+    ).eval()
+    with torch.inference_mode():
+        outs = model(torch.randn(2, 3, 32, 32))
+    assert len(outs) == 2
+    feature, cls_token = outs[0]
+    assert feature.shape == (2, 16, 8, 8)
+    assert cls_token.shape == (2, 16)
+    # The CLIP tower is frozen (frozen_exclude=[]).
+    assert all(not p.requires_grad for p in model.parameters())
+
+
+def test_ban_head_forward_shapes(make_small_ban_head) -> None:
+    head = make_small_ban_head().eval()
+    img_from = torch.randn(1, 3, 32, 32)
+    img_to = torch.randn(1, 3, 32, 32)
+    # One fused stage: CLIP features come as [feature map, cls token].
+    clip_from = [[torch.randn(1, 24, 4, 4), torch.randn(1, 24)]]
+    clip_to = [[torch.randn(1, 24, 4, 4), torch.randn(1, 24)]]
+    with torch.inference_mode():
+        out = head([img_from, img_to, clip_from, clip_to])
+    # Classified at the first side-encoder stage's scale (1/4).
+    assert out.shape == (1, 2, 8, 8)
+
+
+def test_ban_change_detector_forward(make_small_ban_head) -> None:
+    from opencd_lite import BANChangeDetector
+    from opencd_lite.models import VisionTransformer
+
+    encoder = VisionTransformer(
+        img_size=(16, 16),
+        patch_size=4,
+        embed_dims=24,
+        num_layers=2,
+        num_heads=2,
+        out_indices=(1,),
+        pre_norm=True,
+        output_cls_token=True,
+        frozen_exclude=[],
+    )
+    detector = BANChangeDetector(
+        image_encoder=encoder,
+        decode_head=make_small_ban_head(),
+        encoder_resolution={"size": (16, 16), "mode": "bilinear"},
+    ).eval()
+    with torch.inference_mode():
+        out = detector(torch.randn(1, 3, 32, 32), torch.randn(1, 3, 32, 32))
+    # The wrapper resizes head logits to the input resolution.
+    assert out.shape == (1, 2, 32, 32)
+
+
 def test_bit_head_forward_shapes() -> None:
     from opencd_lite.models import BITHead
 
@@ -191,11 +552,27 @@ def test_registry_contains_supported_models() -> None:
         "FC_EF",
         "FC_Siam_conc",
         "FC_Siam_diff",
+        "IA_ResNet",
+        "IA_ResNetV1c",
+        "IA_ResNetV1d",
         "IFN",
+        "LightCDNet",
         "SNUNet_ECAM",
+        "TinyNet",
+        "mmseg.MixVisionTransformer",
         "mmseg.ResNet",
         "mmseg.ResNetV1c",
+        "mmseg.VisionTransformer",
     ]
     assert get_model_class("CGNet").__name__ == "CGNet"
-    assert available_heads() == ["BITHead"]
+    assert available_heads() == [
+        "BITHead",
+        "BitemporalAdapterHead",
+        "ChangeStarHead",
+        "Changer",
+        "DS_FPNHead",
+        "STAHead",
+        "TinyHead",
+        "mmseg.SegformerHead",
+    ]
     assert get_head_class("BITHead").__name__ == "BITHead"

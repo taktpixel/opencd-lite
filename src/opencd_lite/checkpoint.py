@@ -152,9 +152,9 @@ def extract_backbone_state_dict(
 
 
 def _extract_detector_state_dict(
-    checkpoint: dict[str, Any], *, with_decode_head: bool
+    checkpoint: dict[str, Any], *, with_decode_head: bool, with_neck: bool
 ) -> tuple[dict[str, torch.Tensor], list[str]]:
-    """Extract detector-level weights (``backbone.*`` and optionally ``decode_head.*``).
+    """Extract detector-level weights (``backbone.*``, optionally ``decode_head.*``/``neck.*``).
 
     Keys keep their prefixes so they can be loaded into a
     :class:`~opencd_lite.inference.ChangeDetector` directly; bare keys
@@ -165,7 +165,11 @@ def _extract_detector_state_dict(
     extracted: dict[str, torch.Tensor] = {}
     ignored: list[str] = []
     for key, value in state_dict.items():
-        if key.startswith(_BACKBONE_PREFIX) or key.startswith("decode_head.") and with_decode_head:
+        if (
+            key.startswith((_BACKBONE_PREFIX, "image_encoder."))
+            or (key.startswith("decode_head.") and with_decode_head)
+            or (key.startswith("neck.") and with_neck)
+        ):
             extracted[key] = value
         elif key.startswith(_IGNORED_PREFIXES):
             ignored.append(key)
@@ -186,8 +190,9 @@ def load_opencd_checkpoint(
         model: Either a bare network (e.g. ``CGNet``) or a
             :class:`~opencd_lite.inference.ChangeDetector` wrapper. For a
             wrapper, ``backbone`` receives the model weights and — when a
-            parametric ``decode_head`` is present — ``decode_head.*``
-            checkpoint keys are loaded into it as well.
+            parametric ``decode_head`` (and/or ``neck``) is present —
+            ``decode_head.*`` / ``neck.*`` checkpoint keys are loaded
+            into it as well.
         path: Path to the ``.pth`` checkpoint file.
         strict: Raise if any model key is missing or any checkpoint model
             key is unexpected. Harness-only keys are always ignored.
@@ -202,7 +207,13 @@ def load_opencd_checkpoint(
         result = model.load_state_dict(state_dict, strict=False)
     else:
         has_head = isinstance(getattr(model, "decode_head", None), nn.Module)
-        state_dict, ignored = _extract_detector_state_dict(checkpoint, with_decode_head=has_head)
+        # Parameter-free necks (e.g. FeatureFusionNeck) hold no state and
+        # keep ``neck.*`` checkpoint keys ignored, as before.
+        neck = getattr(model, "neck", None)
+        has_neck = isinstance(neck, nn.Module) and len(neck.state_dict()) > 0
+        state_dict, ignored = _extract_detector_state_dict(
+            checkpoint, with_decode_head=has_head, with_neck=has_neck
+        )
         result = model.load_state_dict(state_dict, strict=False)
 
     report = LoadReport(
@@ -219,6 +230,7 @@ def load_opencd_checkpoint(
 
 
 def _is_bare_model(model: nn.Module) -> bool:
-    """Return True unless the module wraps its network in a ``backbone`` attribute."""
+    """Return True unless the module wraps its network under a detector attribute."""
     backbone = getattr(model, "backbone", None)
-    return not isinstance(backbone, nn.Module)
+    image_encoder = getattr(model, "image_encoder", None)
+    return not (isinstance(backbone, nn.Module) or isinstance(image_encoder, nn.Module))

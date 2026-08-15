@@ -149,6 +149,198 @@ def test_load_bit_checkpoint_round_trip(configs_dir: Path, tmp_path: Path) -> No
         assert torch.equal(fresh(x1, x2), source(x1, x2))
 
 
+def test_load_changer_checkpoint_round_trip(configs_dir: Path, tmp_path: Path) -> None:
+    """Changer: interaction backbone + multi-input FDAF head, Open-CD key layout."""
+    from opencd_lite import build_model
+
+    config = configs_dir / "changer" / "changer_ex_r18_512x512_40k_levircd.py"
+    source = build_model(config)
+    state_dict = {
+        **{f"backbone.{k}": v.clone() for k, v in source.backbone.state_dict().items()},
+        **{f"decode_head.{k}": v.clone() for k, v in source.decode_head.state_dict().items()},
+    }
+    path = tmp_path / "changer.pth"
+    torch.save({"state_dict": state_dict}, path)
+
+    fresh = build_model(config, checkpoint=path)
+    assert torch.equal(
+        fresh.decode_head.neck_layer.flow_make[0].weight,
+        source.decode_head.neck_layer.flow_make[0].weight,
+    )
+    x1 = torch.randn(1, 3, 64, 64)
+    x2 = torch.randn(1, 3, 64, 64)
+    with torch.inference_mode():
+        assert torch.equal(fresh(x1, x2), source(x1, x2))
+
+
+def test_load_stanet_checkpoint_round_trip(configs_dir: Path, tmp_path: Path) -> None:
+    """STANet: siamese backbone + multi-input metric head, Open-CD key layout."""
+    from opencd_lite import build_model
+
+    config = configs_dir / "stanet" / "stanet_pam_256x256_40k_levircd.py"
+    source = build_model(config)
+    state_dict = {
+        **{f"backbone.{k}": v.clone() for k, v in source.backbone.state_dict().items()},
+        **{f"decode_head.{k}": v.clone() for k, v in source.decode_head.state_dict().items()},
+    }
+    path = tmp_path / "stanet.pth"
+    torch.save({"state_dict": state_dict}, path)
+
+    fresh = build_model(config, checkpoint=path)
+    assert torch.equal(
+        fresh.decode_head.netA.Self_Att.conv_bn[0].weight,
+        source.decode_head.netA.Self_Att.conv_bn[0].weight,
+    )
+    x1 = torch.randn(1, 3, 64, 64)
+    x2 = torch.randn(1, 3, 64, 64)
+    with torch.inference_mode():
+        assert torch.equal(fresh(x1, x2), source(x1, x2))
+
+
+def test_load_lightcdnet_checkpoint_round_trip(configs_dir: Path, tmp_path: Path) -> None:
+    """LightCDNet: dual-input backbone + parametric TinyFPN neck + DS_FPNHead."""
+    from opencd_lite import build_model
+
+    config = configs_dir / "lightcdnet" / "lightcdnet_s_256x256_40k_levircd.py"
+    source = build_model(config)
+    state_dict = {
+        **{f"backbone.{k}": v.clone() for k, v in source.backbone.state_dict().items()},
+        **{f"neck.{k}": v.clone() for k, v in source.neck.state_dict().items()},
+        **{f"decode_head.{k}": v.clone() for k, v in source.decode_head.state_dict().items()},
+        "auxiliary_head.dummy": torch.zeros(1),
+    }
+    path = tmp_path / "lightcdnet.pth"
+    torch.save({"state_dict": state_dict}, path)
+
+    fresh = build_model(config, checkpoint=path)
+    # neck.* keys are loaded (not ignored) for parametric necks.
+    assert torch.equal(
+        fresh.neck.lateral_convs[0].conv.weight,
+        source.neck.lateral_convs[0].conv.weight,
+    )
+    x1 = torch.randn(1, 3, 64, 64)
+    x2 = torch.randn(1, 3, 64, 64)
+    with torch.inference_mode():
+        assert torch.equal(fresh(x1, x2), source(x1, x2))
+
+
+def test_load_changeformer_checkpoint_round_trip(configs_dir: Path, tmp_path: Path) -> None:
+    """ChangeFormer: siamese MiT backbone + SegFormer head, Open-CD key layout."""
+    from opencd_lite import build_model
+
+    config = configs_dir / "changeformer" / "changeformer_mit-b0_256x256_40k_levircd.py"
+    source = build_model(config)
+    state_dict = {
+        **{f"backbone.{k}": v.clone() for k, v in source.backbone.state_dict().items()},
+        **{f"decode_head.{k}": v.clone() for k, v in source.decode_head.state_dict().items()},
+    }
+    path = tmp_path / "changeformer.pth"
+    torch.save({"state_dict": state_dict}, path)
+
+    fresh = build_model(config, checkpoint=path)
+    assert torch.equal(
+        fresh.backbone.layers[0][1][0].attn.attn.in_proj_weight,
+        source.backbone.layers[0][1][0].attn.attn.in_proj_weight,
+    )
+    x1 = torch.randn(1, 3, 64, 64)
+    x2 = torch.randn(1, 3, 64, 64)
+    with torch.inference_mode():
+        assert torch.equal(fresh(x1, x2), source(x1, x2))
+
+
+def test_load_changestar_checkpoint_round_trip(configs_dir: Path, tmp_path: Path) -> None:
+    """ChangeStar: siamese backbone + parametric FarSegFPN neck + nested head."""
+    from opencd_lite import build_model
+
+    config = configs_dir / "changestar" / "changestar_farseg_1x96_256x256_40k_levircd.py"
+    source = build_model(config)
+    state_dict = {
+        **{f"backbone.{k}": v.clone() for k, v in source.backbone.state_dict().items()},
+        **{f"neck.{k}": v.clone() for k, v in source.neck.state_dict().items()},
+        **{f"decode_head.{k}": v.clone() for k, v in source.decode_head.state_dict().items()},
+    }
+    path = tmp_path / "changestar.pth"
+    torch.save({"state_dict": state_dict}, path)
+
+    fresh = build_model(config, checkpoint=path)
+    assert torch.equal(
+        fresh.decode_head.seg_head._fsr.scene_encoder[0][0].weight,
+        source.decode_head.seg_head._fsr.scene_encoder[0][0].weight,
+    )
+    x1 = torch.randn(1, 3, 64, 64)
+    x2 = torch.randn(1, 3, 64, 64)
+    with torch.inference_mode():
+        assert torch.equal(fresh(x1, x2), source(x1, x2))
+
+
+def test_load_tinycd_v2_checkpoint_round_trip(configs_dir: Path, tmp_path: Path) -> None:
+    """TinyCD v2: dual-input TinyNet + TinyBlock FPN neck + priori-attn head."""
+    from opencd_lite import build_model
+
+    config = configs_dir / "tinycd_v2" / "tinycd_v2_s_256x256_40k_levircd.py"
+    source = build_model(config)
+    state_dict = {
+        **{f"backbone.{k}": v.clone() for k, v in source.backbone.state_dict().items()},
+        **{f"neck.{k}": v.clone() for k, v in source.neck.state_dict().items()},
+        **{f"decode_head.{k}": v.clone() for k, v in source.decode_head.state_dict().items()},
+    }
+    path = tmp_path / "tinycd_v2.pth"
+    torch.save({"state_dict": state_dict}, path)
+
+    fresh = build_model(config, checkpoint=path)
+    assert torch.equal(
+        fresh.backbone.layer1[0].conv[0].conv.weight,
+        source.backbone.layer1[0].conv[0].conv.weight,
+    )
+    x1 = torch.randn(1, 3, 64, 64)
+    x2 = torch.randn(1, 3, 64, 64)
+    with torch.inference_mode():
+        assert torch.equal(fresh(x1, x2), source(x1, x2))
+
+
+def test_load_ban_checkpoint_round_trip(tmp_path: Path, make_small_ban_head) -> None:
+    """BAN: image_encoder.* checkpoint keys load next to decode_head.*."""
+    from opencd_lite import BANChangeDetector
+    from opencd_lite.models import VisionTransformer
+
+    def make_detector() -> BANChangeDetector:
+        torch.manual_seed(1)
+        return BANChangeDetector(
+            image_encoder=VisionTransformer(
+                img_size=(16, 16),
+                patch_size=4,
+                embed_dims=24,
+                num_layers=2,
+                num_heads=2,
+                out_indices=(1,),
+                pre_norm=True,
+                output_cls_token=True,
+                frozen_exclude=[],
+            ),
+            decode_head=make_small_ban_head(),
+            encoder_resolution={"size": (16, 16), "mode": "bilinear"},
+        )
+
+    source = make_detector()
+    state_dict = {
+        **{f"image_encoder.{k}": v.clone() for k, v in source.image_encoder.state_dict().items()},
+        **{f"decode_head.{k}": v.clone() for k, v in source.decode_head.state_dict().items()},
+    }
+    path = tmp_path / "ban.pth"
+    torch.save({"state_dict": state_dict}, path)
+
+    torch.manual_seed(2)
+    fresh = make_detector()
+    report = load_opencd_checkpoint(fresh, path)
+    assert not report.missing_keys and not report.unexpected_keys
+    x1 = torch.randn(1, 3, 32, 32)
+    x2 = torch.randn(1, 3, 32, 32)
+    source.eval()
+    fresh.eval()
+    with torch.inference_mode():
+        assert torch.equal(fresh(x1, x2), source(x1, x2))
+
+
 def test_plain_state_dict_checkpoint(tmp_path: Path) -> None:
     """Checkpoints produced by opencd-lite itself (bare keys) also load."""
     model = CGNet(pretrained=False)
