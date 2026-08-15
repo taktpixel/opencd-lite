@@ -49,8 +49,13 @@ _LAZY_ATTRS: dict[str, str] = {
     "FC_Siam_conc": ".models",
     "FC_Siam_diff": ".models",
     "SNUNet_ECAM": ".models",
+    "ResNet": ".models",
+    "ResNetV1c": ".models",
+    "BITHead": ".models",
+    "FeatureFusionNeck": ".models",
     "ConvSegHead": ".models",
     "available_models": ".models",
+    "available_heads": ".models",
 }
 
 if TYPE_CHECKING:
@@ -62,11 +67,16 @@ if TYPE_CHECKING:
     from .models import (
         FC_EF,
         IFN,
+        BITHead,
         CGNet,
         ConvSegHead,
         FC_Siam_conc,
         FC_Siam_diff,
+        FeatureFusionNeck,
+        ResNet,
+        ResNetV1c,
         SNUNet_ECAM,
+        available_heads,
         available_models,
     )
     from .onnx import ONNXChangeDetector
@@ -92,12 +102,16 @@ def __dir__() -> list[str]:
 
 
 __all__ = [
+    "BITHead",
     "CGNet",
     "ConvSegHead",
     "FC_EF",
     "FC_Siam_conc",
     "FC_Siam_diff",
+    "FeatureFusionNeck",
     "IFN",
+    "ResNet",
+    "ResNetV1c",
     "SNUNet_ECAM",
     "ChangeDetector",
     "ConfigDict",
@@ -105,6 +119,7 @@ __all__ = [
     "InferenceConfig",
     "ONNXChangeDetector",
     "PreprocessSpec",
+    "available_heads",
     "available_models",
     "build_model",
     "export_onnx",

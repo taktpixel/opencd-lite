@@ -42,6 +42,20 @@ def test_load_ifn_config(configs_dir: Path) -> None:
     assert cfg.optim_wrapper.optimizer.lr == 0.001
 
 
+def test_load_bit_config(configs_dir: Path) -> None:
+    cfg = load_config(configs_dir / "bit" / "bit_r18_256x256_40k_levircd.py")
+
+    assert cfg.model.type == "SiamEncoderDecoder"
+    assert cfg.model.backbone.type == "mmseg.ResNetV1c"
+    assert cfg.model.backbone.num_stages == 3
+    assert tuple(cfg.model.backbone.out_indices) == (2,)
+    assert cfg.model.neck.type == "FeatureFusionNeck"
+    assert cfg.model.neck.policy == "concat"
+    assert cfg.model.decode_head.type == "BITHead"
+    assert cfg.model.decode_head.channels == 32
+    assert cfg.model.test_cfg.mode == "whole"
+
+
 def test_load_upstream_config_in_place() -> None:
     """The loader must read configs from the original Open-CD checkout."""
     upstream = (
