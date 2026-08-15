@@ -248,6 +248,31 @@ def test_load_changeformer_checkpoint_round_trip(configs_dir: Path, tmp_path: Pa
         assert torch.equal(fresh(x1, x2), source(x1, x2))
 
 
+def test_load_changestar_checkpoint_round_trip(configs_dir: Path, tmp_path: Path) -> None:
+    """ChangeStar: siamese backbone + parametric FarSegFPN neck + nested head."""
+    from opencd_lite import build_model
+
+    config = configs_dir / "changestar" / "changestar_farseg_1x96_256x256_40k_levircd.py"
+    source = build_model(config)
+    state_dict = {
+        **{f"backbone.{k}": v.clone() for k, v in source.backbone.state_dict().items()},
+        **{f"neck.{k}": v.clone() for k, v in source.neck.state_dict().items()},
+        **{f"decode_head.{k}": v.clone() for k, v in source.decode_head.state_dict().items()},
+    }
+    path = tmp_path / "changestar.pth"
+    torch.save({"state_dict": state_dict}, path)
+
+    fresh = build_model(config, checkpoint=path)
+    assert torch.equal(
+        fresh.decode_head.seg_head._fsr.scene_encoder[0][0].weight,
+        source.decode_head.seg_head._fsr.scene_encoder[0][0].weight,
+    )
+    x1 = torch.randn(1, 3, 64, 64)
+    x2 = torch.randn(1, 3, 64, 64)
+    with torch.inference_mode():
+        assert torch.equal(fresh(x1, x2), source(x1, x2))
+
+
 def test_plain_state_dict_checkpoint(tmp_path: Path) -> None:
     """Checkpoints produced by opencd-lite itself (bare keys) also load."""
     model = CGNet(pretrained=False)

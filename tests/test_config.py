@@ -109,6 +109,20 @@ def test_load_changeformer_config(configs_dir: Path) -> None:
     assert list(cfg.model.decode_head.in_channels) == [128, 256, 640, 1024]
 
 
+def test_load_changestar_config(configs_dir: Path) -> None:
+    cfg = load_config(configs_dir / "changestar" / "changestar_farseg_1x96_512x512_40k_levircd.py")
+
+    assert cfg.model.type == "SiamEncoderDecoder"
+    assert cfg.model.backbone.type == "mmseg.ResNetV1c"
+    assert cfg.model.neck.type == "FarSegFPN"
+    assert cfg.model.neck.out_channels == 256
+    assert cfg.model.decode_head.type == "ChangeStarHead"
+    assert cfg.model.decode_head.inference_mode == "t1t2"
+    assert cfg.model.decode_head.seg_head_cfg.type == "FarSegHead"
+    assert cfg.model.decode_head.changemixin_cfg.inner_channels == 96
+    assert cfg.model.decode_head.out_channels == 1
+
+
 def test_load_upstream_config_in_place() -> None:
     """The loader must read configs from the original Open-CD checkout."""
     upstream = (

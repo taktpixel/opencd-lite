@@ -314,6 +314,55 @@ def test_segformer_head_forward_shapes() -> None:
     assert out.shape == (2, 2, 16, 16)
 
 
+def test_farseg_fpn_forward_shapes() -> None:
+    from opencd_lite.models import FarSegFPN
+
+    neck = FarSegFPN(policy="concat", in_channels=(8, 16), out_channels=8, num_outs=2).eval()
+    feats1 = (torch.randn(1, 8, 16, 16), torch.randn(1, 16, 8, 8))
+    feats2 = (torch.randn(1, 8, 16, 16), torch.randn(1, 16, 8, 8))
+    with torch.inference_mode():
+        outs = neck(feats1, feats2)
+    # Two fused FPN levels plus the fused global scene embedding.
+    assert [tuple(o.shape) for o in outs] == [
+        (1, 16, 16, 16),
+        (1, 16, 8, 8),
+        (1, 32, 1, 1),
+    ]
+
+
+def test_changestar_head_forward_shapes() -> None:
+    from opencd_lite.models import ChangeStarHead
+
+    head = ChangeStarHead(
+        inference_mode="mean",
+        seg_head_cfg={
+            "type": "FarSegHead",
+            "in_channels": (8, 8, 8, 8, 16),
+            "fsr_channels": 8,
+            "channels": 8,
+        },
+        changemixin_cfg={"in_channels": 16, "inner_channels": 8, "num_convs": 1},
+        channels=8,
+        num_classes=2,
+        out_channels=1,
+    ).eval()
+    inputs = [
+        torch.randn(1, 16, 32, 32),
+        torch.randn(1, 16, 16, 16),
+        torch.randn(1, 16, 8, 8),
+        torch.randn(1, 16, 4, 4),
+        torch.randn(1, 32, 1, 1),
+    ]
+    with torch.inference_mode():
+        out = head(inputs)
+    # Single-channel change logits at the finest FPN scale.
+    assert out.shape == (1, 1, 32, 32)
+    # The inner segmentation classifier is replaced with an identity.
+    from torch import nn
+
+    assert isinstance(head.seg_head.conv_seg, nn.Identity)
+
+
 def test_bit_head_forward_shapes() -> None:
     from opencd_lite.models import BITHead
 
@@ -384,6 +433,7 @@ def test_registry_contains_supported_models() -> None:
     assert get_model_class("CGNet").__name__ == "CGNet"
     assert available_heads() == [
         "BITHead",
+        "ChangeStarHead",
         "Changer",
         "DS_FPNHead",
         "STAHead",

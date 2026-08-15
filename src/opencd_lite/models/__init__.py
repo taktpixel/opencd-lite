@@ -9,6 +9,7 @@ from .bit_head import BITHead
 from .cgnet import CGNet
 from .changer_head import Changer
 from .ds_fpn_head import DS_FPNHead
+from .farseg import ChangeStarHead, FarSegFPN, FarSegHead
 from .fc_siam import FC_EF, FC_Siam_conc, FC_Siam_diff
 from .heads import ConvSegHead
 from .ia_resnet import IA_ResNet, IA_ResNetV1c, IA_ResNetV1d
@@ -34,10 +35,13 @@ from .tiny_fpn import TinyFPN
 __all__ = [
     "BITHead",
     "CGNet",
+    "ChangeStarHead",
     "Changer",
     "ChannelExchange",
     "ConvSegHead",
     "DS_FPNHead",
+    "FarSegFPN",
+    "FarSegHead",
     "FC_EF",
     "FC_Siam_conc",
     "FC_Siam_diff",

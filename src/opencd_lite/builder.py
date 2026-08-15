@@ -20,7 +20,14 @@ from torch import nn
 from .checkpoint import load_opencd_checkpoint
 from .config import load_config
 from .inference import ChangeDetector, InferenceConfig
-from .models import ConvSegHead, FeatureFusionNeck, TinyFPN, get_head_class, get_model_class
+from .models import (
+    ConvSegHead,
+    FarSegFPN,
+    FeatureFusionNeck,
+    TinyFPN,
+    get_head_class,
+    get_model_class,
+)
 from .transforms import IMAGENET_SPEC, PreprocessSpec
 
 __all__ = ["IDENTITY_HEAD_TYPES", "build_model"]
@@ -33,7 +40,7 @@ _SUPPORTED_DETECTOR_TYPES = ("DIEncoderDecoder", "SiamEncoderDecoder")
 IDENTITY_HEAD_TYPES = ("IdentityHead", "DSIdentityHead")
 #: Config keys of registered decode heads that belong to the training
 #: harness (or are handled by the inference wrapper), not the module.
-_HEAD_HARNESS_KEYS = ("type", "loss_decode", "sampler", "ignore_index", "in_index")
+_HEAD_HARNESS_KEYS = ("type", "loss_decode", "sampler", "ignore_index", "in_index", "init_cfg")
 #: mmseg's BaseDecodeHead default when a binary head leaves threshold unset.
 _DEFAULT_BINARY_THRESHOLD = 0.3
 #: mmseg's BaseDecodeHead default dropout before the classifier.
@@ -80,6 +87,9 @@ def build_model(
 
     backbone_cfg = dict(model_cfg["backbone"])
     model_type = backbone_cfg.pop("type")
+    # Training-time initialization instructions (ImageNet et al.); the
+    # loaded checkpoint overwrites every weight anyway.
+    backbone_cfg.pop("init_cfg", None)
     model_class = get_model_class(model_type)
     if checkpoint is not None and _accepts_kwarg(model_class, "pretrained"):
         # The checkpoint overwrites every weight; skip the (large) download
@@ -132,6 +142,7 @@ def _build_decode_head(head_cfg: Mapping[str, Any]) -> nn.Module | None:
 #: pyramids of a siamese backbone; ``TinyFPN`` refines the single fused
 #: pyramid of a dual-input backbone.
 _NECK_TYPES: dict[str, type[nn.Module]] = {
+    "FarSegFPN": FarSegFPN,
     "FeatureFusionNeck": FeatureFusionNeck,
     "TinyFPN": TinyFPN,
 }
