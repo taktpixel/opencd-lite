@@ -56,6 +56,7 @@ _LAZY_ATTRS: dict[str, str] = {
     "IA_ResNetV1d": ".models",
     "BITHead": ".models",
     "Changer": ".models",
+    "STAHead": ".models",
     "FeatureFusionNeck": ".models",
     "ConvSegHead": ".models",
     "available_models": ".models",
@@ -84,6 +85,7 @@ if TYPE_CHECKING:
         ResNet,
         ResNetV1c,
         SNUNet_ECAM,
+        STAHead,
         available_heads,
         available_models,
     )
@@ -125,6 +127,7 @@ __all__ = [
     "ResNet",
     "ResNetV1c",
     "SNUNet_ECAM",
+    "STAHead",
     "ChangeDetector",
     "ConfigDict",
     "IMAGENET_SPEC",

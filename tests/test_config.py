@@ -69,6 +69,20 @@ def test_load_changer_config(configs_dir: Path) -> None:
     assert cfg.model.decode_head.channels == 128
 
 
+def test_load_stanet_config(configs_dir: Path) -> None:
+    cfg = load_config(configs_dir / "stanet" / "stanet_pam_256x256_40k_levircd.py")
+
+    assert cfg.model.type == "SiamEncoderDecoder"
+    assert cfg.model.backbone.type == "mmseg.ResNetV1c"
+    assert cfg.model.neck.policy == "concat"
+    assert cfg.model.decode_head.type == "STAHead"
+    # The PAM leaf config overrides the base sa_mode='None'.
+    assert cfg.model.decode_head.sa_mode == "PAM"
+    assert cfg.model.decode_head.out_channels == 1
+    assert cfg.model.decode_head.threshold == 0.5
+    assert cfg.model.test_cfg.mode == "slide"
+
+
 def test_load_upstream_config_in_place() -> None:
     """The loader must read configs from the original Open-CD checkout."""
     upstream = (

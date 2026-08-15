@@ -24,6 +24,7 @@ from .registry import (
 )
 from .resnet import ResNet, ResNetV1c
 from .snunet import SNUNet_ECAM
+from .sta_head import STAHead
 
 __all__ = [
     "BITHead",
@@ -42,6 +43,7 @@ __all__ = [
     "ResNet",
     "ResNetV1c",
     "SNUNet_ECAM",
+    "STAHead",
     "SpatialExchange",
     "TwoIdentity",
     "available_heads",

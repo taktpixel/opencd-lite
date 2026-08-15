@@ -189,6 +189,31 @@ def test_changer_head_forward_shapes() -> None:
     assert out.shape == (2, 2, 16, 16)
 
 
+def test_sta_head_forward_shapes() -> None:
+    from opencd_lite.models import STAHead
+
+    head = STAHead(in_channels=(8, 16), channels=8, sa_in_channels=16, sa_mode="PAM").eval()
+    inputs = [torch.randn(2, 16, 16, 16), torch.randn(2, 32, 8, 8)]
+    with torch.inference_mode():
+        out = head(inputs)
+    # A single-channel +/-100 pseudo-logit map at the first stage scale.
+    assert out.shape == (2, 1, 16, 16)
+    assert set(out.unique().tolist()) <= {-100.0, 100.0}
+    with torch.inference_mode():
+        dist = head.forward_distance(inputs)
+    assert dist.shape == (2, 1, 16, 16)
+    assert (dist >= 0).all()
+
+
+def test_sta_head_bam_mode() -> None:
+    from opencd_lite.models import STAHead
+
+    head = STAHead(in_channels=(8,), channels=8, sa_in_channels=16, sa_mode="BAM", sa_ds=1).eval()
+    with torch.inference_mode():
+        out = head([torch.randn(1, 16, 8, 8)])
+    assert out.shape == (1, 1, 8, 8)
+
+
 def test_bit_head_forward_shapes() -> None:
     from opencd_lite.models import BITHead
 
@@ -255,5 +280,5 @@ def test_registry_contains_supported_models() -> None:
         "mmseg.ResNetV1c",
     ]
     assert get_model_class("CGNet").__name__ == "CGNet"
-    assert available_heads() == ["BITHead", "Changer"]
+    assert available_heads() == ["BITHead", "Changer", "STAHead"]
     assert get_head_class("BITHead").__name__ == "BITHead"
