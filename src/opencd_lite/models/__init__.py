@@ -31,6 +31,8 @@ from .segformer_head import SegformerHead
 from .snunet import SNUNet_ECAM
 from .sta_head import STAHead
 from .tiny_fpn import TinyFPN
+from .tiny_head import TinyHead
+from .tinynet import TinyNet
 
 __all__ = [
     "BITHead",
@@ -59,6 +61,8 @@ __all__ = [
     "SegformerHead",
     "SpatialExchange",
     "TinyFPN",
+    "TinyHead",
+    "TinyNet",
     "TwoIdentity",
     "available_heads",
     "available_models",

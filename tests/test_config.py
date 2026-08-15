@@ -123,6 +123,20 @@ def test_load_changestar_config(configs_dir: Path) -> None:
     assert cfg.model.decode_head.out_channels == 1
 
 
+def test_load_tinycd_v2_config(configs_dir: Path) -> None:
+    cfg = load_config(configs_dir / "tinycd_v2" / "tinycd_v2_s_256x256_40k_levircd.py")
+
+    assert cfg.model.type == "DIEncoderDecoder"
+    assert cfg.model.backbone.type == "TinyNet"
+    # The small leaf halves the width of the base variant.
+    assert cfg.model.backbone.arch == "S"
+    assert cfg.model.backbone.widen_factor == 0.5
+    assert cfg.model.neck.type == "TinyFPN"
+    assert list(cfg.model.neck.in_channels) == [8, 16, 16, 24]
+    assert cfg.model.decode_head.type == "TinyHead"
+    assert cfg.model.decode_head.priori_attn is True
+
+
 def test_load_upstream_config_in_place() -> None:
     """The loader must read configs from the original Open-CD checkout."""
     upstream = (

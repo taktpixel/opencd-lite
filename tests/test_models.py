@@ -363,6 +363,72 @@ def test_changestar_head_forward_shapes() -> None:
     assert isinstance(head.seg_head.conv_seg, nn.Identity)
 
 
+def test_tinynet_forward_shapes() -> None:
+    from opencd_lite.models import TinyNet
+
+    model = TinyNet(
+        arch="S",
+        widen_factor=0.5,
+        output_early_x=True,
+        strip_kernel_size=(7, 7, 7, 7),
+    ).eval()
+    with torch.inference_mode():
+        outs = model(torch.randn(1, 3, 64, 64), torch.randn(1, 3, 64, 64))
+    # Early concatenated stem feature plus the four trunk stages.
+    assert [tuple(o.shape) for o in outs] == [
+        (1, 16, 32, 32),
+        (1, 8, 32, 32),
+        (1, 16, 16, 16),
+        (1, 16, 8, 8),
+        (1, 24, 4, 4),
+    ]
+
+
+def test_tiny_fpn_tinyblock_forward_shapes() -> None:
+    from opencd_lite.models import TinyFPN
+    from opencd_lite.models.tinynet import TinyBlock
+
+    neck = TinyFPN(
+        in_channels=[8, 16],
+        out_channels=8,
+        num_outs=2,
+        custom_block="tinyblock",
+        exist_early_x=True,
+    ).eval()
+    assert isinstance(neck.fpn_convs[0], TinyBlock)
+    inputs = [
+        torch.randn(1, 16, 32, 32),  # early feature (not fed to the FPN)
+        torch.randn(1, 8, 16, 16),
+        torch.randn(1, 16, 8, 8),
+    ]
+    with torch.inference_mode():
+        outs = neck(inputs)
+    assert torch.equal(outs[0], inputs[0])
+    assert [tuple(o.shape) for o in outs[1:]] == [(1, 8, 16, 16), (1, 8, 8, 8)]
+
+
+def test_tiny_head_forward_shapes() -> None:
+    from opencd_lite.models import TinyHead
+
+    head = TinyHead(
+        in_channels=(16, 8, 8),
+        feature_strides=(2, 2, 4),
+        priori_attn=True,
+        channels=8,
+        num_classes=2,
+        dropout_ratio=0.0,
+    ).eval()
+    inputs = [
+        torch.randn(1, 16, 32, 32),  # early stem feature (attention gate)
+        torch.randn(1, 8, 16, 16),
+        torch.randn(1, 8, 8, 8),
+    ]
+    with torch.inference_mode():
+        out = head(inputs)
+    # The gated output is resized to the early feature's resolution.
+    assert out.shape == (1, 2, 32, 32)
+
+
 def test_bit_head_forward_shapes() -> None:
     from opencd_lite.models import BITHead
 
@@ -426,6 +492,7 @@ def test_registry_contains_supported_models() -> None:
         "IFN",
         "LightCDNet",
         "SNUNet_ECAM",
+        "TinyNet",
         "mmseg.MixVisionTransformer",
         "mmseg.ResNet",
         "mmseg.ResNetV1c",
@@ -437,6 +504,7 @@ def test_registry_contains_supported_models() -> None:
         "Changer",
         "DS_FPNHead",
         "STAHead",
+        "TinyHead",
         "mmseg.SegformerHead",
     ]
     assert get_head_class("BITHead").__name__ == "BITHead"

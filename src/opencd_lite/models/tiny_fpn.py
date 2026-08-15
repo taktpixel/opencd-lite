@@ -30,8 +30,9 @@ class TinyFPN(nn.Module):
             feature when ``exist_early_x`` is set).
         out_channels: Common output width of every pyramid level.
         num_outs: Number of FPN output scales.
-        custom_block: Block type for the per-level output convolutions;
-            only ``'conv'`` (a plain 3x3 convolution) is supported.
+        custom_block: Block type for the per-level output convolutions:
+            ``'tinyblock'`` (a TinyNet inverted-residual block, the
+            upstream default) or ``'conv'`` (a plain 3x3 convolution).
         exist_early_x: The first input is an "early" high-resolution
             feature that is passed through unchanged and prepended to
             the outputs.
@@ -49,10 +50,8 @@ class TinyFPN(nn.Module):
         early_x_for_fpn: bool = False,
     ) -> None:
         super().__init__()
-        if custom_block != "conv":
-            raise NotImplementedError(
-                f"custom_block {custom_block!r} is not supported yet ('conv' only)"
-            )
+        if custom_block not in ("conv", "tinyblock"):
+            raise NotImplementedError(f"custom_block {custom_block!r} is not supported")
         if num_outs < len(in_channels):
             raise ValueError("num_outs must cover every input scale")
         self.in_channels = list(in_channels)
@@ -61,15 +60,25 @@ class TinyFPN(nn.Module):
         self.exist_early_x = exist_early_x
         self.early_x_for_fpn = early_x_for_fpn
 
-        # Upstream builds these with norm_cfg=None/act_cfg=None, i.e.
-        # plain biased convolutions.
+        # Upstream builds the laterals with norm_cfg=None/act_cfg=None,
+        # i.e. plain biased convolutions.
         self.lateral_convs = nn.ModuleList(
             ConvModule(channels, out_channels, 1, act=False) for channels in self.in_channels
         )
-        self.fpn_convs = nn.ModuleList(
-            ConvModule(out_channels, out_channels, 3, padding=1, act=False)
-            for _ in self.in_channels
-        )
+        if custom_block == "tinyblock":
+            # Imported lazily: the common 'conv' configuration must not
+            # depend on the TinyNet module.
+            from .tinynet import TinyBlock
+
+            self.fpn_convs = nn.ModuleList(
+                TinyBlock(out_channels, out_channels, stride=1, expand_ratio=1)
+                for _ in self.in_channels
+            )
+        else:
+            self.fpn_convs = nn.ModuleList(
+                ConvModule(out_channels, out_channels, 3, padding=1, act=False)
+                for _ in self.in_channels
+            )
 
     def forward(self, inputs: Sequence[Tensor]) -> tuple[Tensor, ...]:
         early_x: Tensor | None = None
