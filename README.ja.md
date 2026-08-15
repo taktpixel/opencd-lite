@@ -65,7 +65,7 @@ from opencd_lite import build_model
 
 detector = build_model(
     "configs/cgnet/cgnet_256x256_40k_levircd.py",  # 本家 config がそのまま使える
-    checkpoint="cgnet_levircd.pth",                # 公開済み Open-CD 重み
+    checkpoint="cgnet_levircd.pth",  # 公開済み Open-CD 重み
 )
 
 # predict() は Open-CD のテスト時プロトコルを再現します
