@@ -83,6 +83,13 @@ after = np.asarray(Image.open("after.png").convert("RGB"))
 mask = detector.predict(before, after)  # (H, W) uint8、1 = 変化あり
 ```
 
+> **注:** PyPI パッケージに含まれるのは `opencd_lite` ライブラリ本体のみで、
+> `configs/` ディレクトリは同梱されません。config ベースの API を使う場合は、
+> このリポジトリ（または本家 [Open-CD](https://github.com/likyoo/open-cd) —
+> 本家 config はそのまま読み込めます）から config ファイルを取得し、その
+> ローカルパスを渡してください。上記の「直接インスタンス化」API に config
+> は不要です。
+
 ### ONNX エクスポート
 
 ```python
